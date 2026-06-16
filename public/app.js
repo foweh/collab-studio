@@ -998,6 +998,9 @@ socket.on('login-success', ({ userName, isAdmin: admin, role, avatar }) => {
   else selfBadge.className = 'badge';
   updateUIBasedOnRole();
   initUI();
+  // 恢复刷新前的面板
+  var lastPanel = sessionStorage.getItem('collab-last-panel');
+  if (lastPanel) switchModule(lastPanel);
   if (isAdmin) {
     socket.emit('admin-get-stats');
     socket.emit('admin-list-resets');
@@ -1365,6 +1368,8 @@ function switchModule(moduleName) {
   if (moduleName === 'messages' || moduleName === 'admin') {
     socket.emit('group-list');
   }
+  // 记住当前面板，刷新后恢复
+  sessionStorage.setItem('collab-last-panel', moduleName);
 }
 
 // ─── 返回文件夹 ─────────────────────────────────────────
@@ -1893,6 +1898,7 @@ function openProject(p) {
   
   if (panel) panel.classList.add('active');
   if (btn) btn.classList.add('active');
+  sessionStorage.setItem('collab-last-panel', moduleName);
   
   // 如果是创作工具，隐藏左侧导航和工具栏
   const creativeModules = ['script', 'mindmap', 'story', 'storyboard'];
