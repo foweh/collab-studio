@@ -243,7 +243,7 @@ socket.on('chat-message', ({ from, text, time }) => {
   const msgsEl = document.getElementById('chat-msgs');
   if (!msgsEl) return;
   const chatWith = modal?.dataset.chatWith;
-  if (chatWith === from || from === myName) {
+  if (chatWith === from) { // only show messages from chat partner, not echoes of my own
     const lastMsg = msgsEl.lastElementChild;
     const isMe = from === myName;
     const lastSame = lastMsg && (
@@ -948,6 +948,7 @@ let myRole = savedAuth ? (savedAuth.role || (isAdmin ? 'editor' : 'commenter')) 
 let myToken = savedAuth ? savedAuth.token : '';
 let myAvatar = savedAuth ? (savedAuth.avatar || '') : '';
 const avatarMap = {}; // userName → avatar filename
+let _isComposing = false; // track IME composition state
 
 let myGroups = []; // user's groups
 let allUsers = []; // all registered users (for create-group)
@@ -2002,6 +2003,10 @@ function initUI() {
       sendChat();
     }
   });
+  if (chatInput) {
+    chatInput.addEventListener('compositionstart', function() { _isComposing = true; });
+    chatInput.addEventListener('compositionend', function() { _isComposing = false; });
+  }
   if (chatInput) chatInput.addEventListener('keydown', (e) => {
     if (e.key === 'Enter' && !e.isComposing) {
       if (document.getElementById('chat-modal').dataset.groupId) sendGroupChat();
