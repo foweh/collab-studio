@@ -1,0 +1,454 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>协作创作工作室 - 登录</title>
+  <link rel="stylesheet" href="/style.css" />
+  <style>
+    /* ─── 登录页专用样式 ─── */
+    body {
+      background: var(--bg);
+      height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      overflow: hidden;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+    }
+    .login-wrapper {
+      width: 380px;
+      max-width: 94%;
+    }
+    .login-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      box-shadow: 0 8px 48px rgba(0,0,0,0.6);
+      animation: alertFadeIn 0.25s ease-out;
+      overflow: hidden;
+    }
+    .login-header {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 28px 28px 0;
+    }
+    .login-icon { font-size: 28px; line-height: 1; }
+    .login-title { font-size: 18px; font-weight: 700; color: var(--text); flex: 1; }
+    .login-body { padding: 20px 28px 28px; }
+    .login-field { margin-bottom: 14px; }
+    .login-label {
+      display: block; font-size: 12px; font-weight: 500;
+      color: var(--text-dim); margin-bottom: 6px;
+    }
+    .login-input {
+      width: 100%;
+      padding: 10px 14px;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      background: var(--surface2);
+      color: var(--text);
+      font-size: 14px;
+      outline: none;
+      font-family: inherit;
+      transition: 0.12s;
+      box-sizing: border-box;
+    }
+    .login-input:focus {
+      border-color: var(--accent);
+      box-shadow: 0 0 0 2px rgba(79, 195, 247, 0.15);
+    }
+    .login-error {
+      font-size: 13px;
+      color: var(--danger);
+      margin-bottom: 10px;
+      padding: 6px 10px;
+      background: rgba(255,82,82,0.1);
+      border-radius: 6px;
+      text-align: center;
+      display: none;
+    }
+    .login-btn {
+      width: 100%;
+      padding: 11px 0;
+      border: none;
+      border-radius: 8px;
+      background: var(--accent);
+      color: #000;
+      font-size: 15px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: opacity 0.15s;
+      margin-top: 4px;
+      font-family: inherit;
+    }
+    .login-btn:hover { opacity: 0.85; }
+    .login-btn:disabled { opacity: 0.4; cursor: default; }
+    .login-links { text-align: center; margin-top: 12px; }
+    .login-links a { color: var(--text-dim); font-size: 12px; text-decoration: none; }
+    .login-links a:hover { color: var(--accent) !important; }
+    .login-sub {
+      text-align: center;
+      margin-top: 16px;
+      font-size: 12px;
+      color: var(--text-dim);
+    }
+    @keyframes alertFadeIn {
+      from { transform: scale(0.92); opacity: 0; }
+      to   { transform: scale(1); opacity: 1; }
+    }
+    .login-sub a { color: var(--accent); text-decoration: none; }
+    .login-sub a:hover { text-decoration: underline; }
+    @media (max-width: 768px) {
+      .login-wrapper { padding: 10px; }
+      .login-card { padding: 20px; }
+      .login-title { font-size: 16px; }
+      .login-input { font-size: 14px; padding: 10px 12px; }
+      .login-btn { padding: 10px; font-size: 14px; }
+    }
+  </style>
+</head>
+<body>
+  <div class="login-wrapper">
+    <div class="login-card">
+      <div class="login-header">
+        <span class="login-icon">🎬</span>
+        <span class="login-title">协作创作工作室</span>
+      </div>
+      <div class="login-body">
+        <div class="login-field">
+          <label class="login-label">用户名</label>
+          <input type="text" id="login-name" class="login-input" placeholder="输入用户名..." maxlength="20" autofocus />
+          <div id="login-name-history" style="margin-top:6px;display:none;">
+            <div style="font-size:11px;color:var(--text-dim);margin-bottom:4px">历史用户名:</div>
+            <div id="login-name-list" style="display:flex;flex-wrap:wrap;gap:4px"></div>
+          </div>
+        </div>
+        <div class="login-field">
+          <label class="login-label">密码</label>
+          <div style="position:relative">
+            <input type="password" id="login-pwd" class="login-input" placeholder="输入密码..." maxlength="50" style="padding-right:36px" />
+            <span id="login-pwd-toggle" style="position:absolute;right:8px;top:50%;transform:translateY(-50%);cursor:pointer;font-size:16px;color:var(--text-dim);user-select:none">👁️</span>
+          </div>
+        </div>
+        <div id="login-error" class="login-error"></div>
+        <button class="login-btn" id="login-btn">进入工作室</button>
+        <div class="login-links">
+          <a href="#" id="login-forgot-link">忘记密码？</a>
+        </div>
+        <div class="login-sub">
+          管理员账号：<strong>热合曼</strong> &nbsp;|&nbsp; 新用户自动注册
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ─── 忘记密码弹窗 ─── -->
+  <div id="forgot-modal" class="modal-overlay" style="display:none">
+    <div class="forgot-card">
+      <div class="forgot-header">
+        <span class="forgot-icon">🔑</span>
+        <span class="forgot-title">申请重置密码</span>
+      </div>
+      <div class="forgot-body">
+        <div class="forgot-field">
+          <label class="forgot-label">用户名</label>
+          <input type="text" id="forgot-name" class="forgot-input" placeholder="你的用户名..." maxlength="20" />
+        </div>
+        <div class="forgot-field">
+          <label class="forgot-label">新密码</label>
+          <input type="password" id="forgot-newpwd" class="forgot-input" placeholder="输入新密码..." maxlength="50" />
+        </div>
+        <div class="forgot-field">
+          <label class="forgot-label">申请理由</label>
+          <input type="text" id="forgot-reason" class="forgot-input" placeholder="为什么要重置密码？..." maxlength="200" />
+        </div>
+        <div id="forgot-error" class="login-error" style="display:none"></div>
+        <div class="forgot-actions">
+          <button class="forgot-btn cancel" id="forgot-cancel">取消</button>
+          <button class="forgot-btn primary" id="forgot-submit">提交申请</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script src="/shared.js"></script>
+  <script src="/socket.io/socket.io.js"></script>
+  <script>
+  // ─── 登录页逻辑 ──────────────────────────────────────
+  (function() {
+    const socket = io({
+      transports: ['websocket', 'polling'],
+      reconnectionAttempts: 3,
+      timeout: 5000,
+    });
+
+    const loginName  = document.getElementById('login-name');
+    const loginPwd   = document.getElementById('login-pwd');
+    const loginError = document.getElementById('login-error');
+    const loginBtn   = document.getElementById('login-btn');
+
+    // 连接状态显示
+    const statusEl = document.createElement('div');
+    statusEl.style.cssText = 'font-size:11px;text-align:center;margin-top:8px;color:var(--text-dim)';
+    statusEl.textContent = '正在连接服务器...';
+    loginBtn.parentNode.insertBefore(statusEl, loginBtn.nextSibling);
+
+    let connected = false;
+
+    socket.on('connect', () => {
+      connected = true;
+      statusEl.textContent = '已连接';
+      statusEl.style.color = 'var(--success, #4caf50)';
+      loginBtn.disabled = false;
+    });
+
+    socket.on('disconnect', () => {
+      connected = false;
+      statusEl.textContent = '连接已断开，正在重连...';
+      statusEl.style.color = 'var(--danger, #f44336)';
+      loginBtn.disabled = true;
+    });
+
+    socket.on('connect_error', () => {
+      connected = false;
+      statusEl.textContent = '连接失败，请确认服务器已启动';
+      statusEl.style.color = 'var(--danger, #f44336)';
+      loginBtn.disabled = false;
+    });
+
+    // 3秒超时检测
+    setTimeout(() => {
+      if (!connected) {
+        statusEl.textContent = '连接超时，请检查服务器是否运行';
+        statusEl.style.color = 'var(--danger, #f44336)';
+        loginBtn.disabled = false;
+      }
+    }, 4000);
+
+    function showError(msg) {
+      loginError.textContent = msg;
+      loginError.style.display = 'block';
+      loginBtn.disabled = false;
+      loginBtn.textContent = '进入工作室';
+    }
+
+    const myFingerprint = window.CollabStudioFingerprint ? window.CollabStudioFingerprint() : '';
+
+    function doLogin() {
+      const name = loginName.value.trim();
+      if (!name) { showError('请输入用户名'); return; }
+      
+      // 安全检测
+      const attackResult = detectMemoryAttack(name);
+      if (attackResult) {
+        showError(attackResult);
+        return;
+      }
+      
+      if (!connected) { showError('尚未连接到服务器，请等待...'); return; }
+      loginBtn.disabled = true;
+      loginBtn.textContent = '登录中...';
+      loginError.style.display = 'none';
+
+      socket.emit('join', { name, password: loginPwd.value || '', fingerprint: myFingerprint });
+    }
+
+    loginBtn.addEventListener('click', doLogin);
+    loginPwd.addEventListener('keydown', (e) => { if (e.key === 'Enter') doLogin(); });
+    loginName.addEventListener('keydown', (e) => { if (e.key === 'Enter') loginPwd.focus(); });
+
+    // 密码显隐切换
+    const pwdToggle = document.getElementById('login-pwd-toggle');
+    if (pwdToggle) {
+      pwdToggle.addEventListener('click', () => {
+        const isPassword = loginPwd.type === 'password';
+        loginPwd.type = isPassword ? 'text' : 'password';
+        pwdToggle.textContent = isPassword ? '🙈' : '👁️';
+      });
+    }
+
+    // 自动填入上次保存的用户名
+    const saved = sessionStorage.getItem('collab-auth');
+    if (saved) {
+      try {
+        const auth = JSON.parse(saved);
+        loginName.value = auth.name || '';
+        if (auth.isAdmin) {
+          // 管理员需要重新输入密码
+          loginPwd.focus();
+        }
+      } catch(_) {}
+    }
+
+    // 用户名历史记录功能
+    function loadUserNameHistory() {
+      try {
+        const history = localStorage.getItem('collab-user-names');
+        if (history) {
+          const names = JSON.parse(history);
+          if (Array.isArray(names) && names.length > 0) {
+            const historyDiv = document.getElementById('login-name-history');
+            const listDiv = document.getElementById('login-name-list');
+            listDiv.innerHTML = '';
+            names.forEach(name => {
+              const btn = document.createElement('button');
+              btn.style.cssText = 'padding:2px 8px;border:1px solid var(--border);border-radius:4px;background:var(--surface2);color:var(--text);font-size:12px;cursor:pointer;transition:all 0.1s';
+              btn.textContent = name;
+              btn.addEventListener('click', () => {
+                loginName.value = name;
+                loginPwd.focus();
+              });
+              listDiv.appendChild(btn);
+            });
+            historyDiv.style.display = 'block';
+          }
+        }
+      } catch(e) {
+        console.warn('[login] Failed to load user name history:', e);
+      }
+    }
+
+    function saveUserNameToHistory(name) {
+      try {
+        const history = localStorage.getItem('collab-user-names');
+        const names = history ? JSON.parse(history) : [];
+        if (!names.includes(name)) {
+          names.unshift(name);
+          // 最多保存10个历史用户名
+          if (names.length > 10) {
+            names.pop();
+          }
+          localStorage.setItem('collab-user-names', JSON.stringify(names));
+        }
+        loadUserNameHistory();
+      } catch(e) {
+        console.warn('[login] Failed to save user name:', e);
+      }
+    }
+
+    // 安全检测：防止内存漏洞攻击
+    function detectMemoryAttack(input) {
+      if (!input) return null;
+      
+      // 检测超长字符串攻击
+      if (input.length > 100) {
+        return '用户名过长，可能存在攻击';
+      }
+      
+      // 检测重复字符攻击（如 "aaaaaaaaa..."）
+      const repeatPattern = /^(.)\1{20,}$/;
+      if (repeatPattern.test(input)) {
+        return '用户名存在异常模式，可能存在攻击';
+      }
+      
+      // 检测特殊字符数量
+      const specialChars = input.match(/[<>{}[\]|\\`~!@#$%^&*()+=;:'"]/g);
+      if (specialChars && specialChars.length > 10) {
+        return '用户名包含过多特殊字符，可能存在攻击';
+      }
+      
+      // 检测Unicode炸弹（如 Emoji 炸弹）
+      const emojiCount = input.match(/[\u{1F300}-\u{1F6FF}\u{2600}-\u{26FF}]/gu);
+      if (emojiCount && emojiCount.length > 5) {
+        return '用户名包含过多表情符号，可能存在攻击';
+      }
+      
+      return null;
+    }
+
+    loadUserNameHistory();
+
+    socket.on('login-success', ({ userName, isAdmin, hasPassword, role, token, avatar }) => {
+      // 保存登录凭证到 sessionStorage（会话级，关闭标签即清除）
+      sessionStorage.setItem('collab-auth', JSON.stringify({
+        name: userName,
+        isAdmin: isAdmin,
+        token: token || '',
+        role: role || (isAdmin ? 'editor' : 'commenter'),
+        avatar: avatar || ''
+      }));
+      // 保存用户名到 localStorage 以便下次自动填入
+      localStorage.setItem('collab-user-name', userName);
+      // 保存用户名到历史记录
+      saveUserNameToHistory(userName);
+      // 跳转到主应用
+      window.location.href = '/app';
+    });
+
+    socket.on('login-error', (msg) => {
+      showError(msg);
+    });
+
+    socket.on('kicked', (msg) => {
+      showError(msg + '，请重新登录');
+      sessionStorage.removeItem('collab-auth');
+    });
+
+    // ─── 忘记密码 ────────────────────────────────────
+    const forgotModal   = document.getElementById('forgot-modal');
+    const forgotName    = document.getElementById('forgot-name');
+    const forgotNewpwd  = document.getElementById('forgot-newpwd');
+    const forgotReason  = document.getElementById('forgot-reason');
+    const forgotError   = document.getElementById('forgot-error');
+    const forgotSubmit  = document.getElementById('forgot-submit');
+    const forgotCancel  = document.getElementById('forgot-cancel');
+
+    document.getElementById('login-forgot-link').addEventListener('click', (e) => {
+      e.preventDefault();
+      forgotName.value = loginName.value || '';
+      forgotNewpwd.value = '';
+      forgotReason.value = '';
+      forgotError.style.display = 'none';
+      forgotModal.style.display = 'flex';
+    });
+
+    forgotCancel.addEventListener('click', () => { forgotModal.style.display = 'none'; });
+
+    forgotSubmit.addEventListener('click', () => {
+      const name = forgotName.value.trim();
+      const newPwd = forgotNewpwd.value;
+      const reason = forgotReason.value.trim();
+      if (!name) { forgotError.textContent = '请输入用户名'; forgotError.style.display = 'block'; return; }
+      if (!newPwd) { forgotError.textContent = '请输入新密码'; forgotError.style.display = 'block'; return; }
+      if (!reason) { forgotError.textContent = '请输入申请理由'; forgotError.style.display = 'block'; return; }
+      forgotError.style.display = 'none';
+      forgotSubmit.disabled = true;
+      forgotSubmit.textContent = '提交中...';
+      socket.emit('forgot-password-request', { name, newPassword: newPwd, reason });
+    });
+
+    socket.on('forgot-password-result', (msg) => {
+      forgotSubmit.disabled = false;
+      forgotSubmit.textContent = '提交申请';
+      if (msg.ok) {
+        forgotModal.style.display = 'none';
+        // 使用自定义 alert
+        const alertModal = document.getElementById('alert-modal') || createFallbackAlert();
+        if (alertModal) {
+          document.getElementById('alert-icon').textContent = '✅';
+          document.getElementById('alert-title').textContent = '申请已提交';
+          document.getElementById('alert-text').textContent = '审批通过后即可使用新密码登录';
+          alertModal.style.display = 'flex';
+        }
+      } else {
+        forgotError.textContent = msg.error || '提交失败';
+        forgotError.style.display = 'block';
+      }
+    });
+  })();
+
+  // 备用 alert（当模板 alert 不存在时）
+  function createFallbackAlert() {
+    const d = document.createElement('div');
+    d.id = 'alert-modal';
+    d.className = 'modal-overlay';
+    d.style.cssText = 'display:flex;position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.6);z-index:1000;align-items:center;justify-content:center';
+    d.innerHTML = '<div class="alert-card"><div class="alert-icon" id="alert-icon">✅</div><div class="alert-title" id="alert-title">提示</div><div class="alert-text" id="alert-text">...</div><button class="alert-btn" onclick="this.closest(\'.modal-overlay\').style.display=\'none\'">知道了</button></div>';
+    document.body.appendChild(d);
+    return d;
+  }
+  </script>
+</body>
+</html>

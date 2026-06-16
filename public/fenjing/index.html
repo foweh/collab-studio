@@ -1,0 +1,827 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="description" content="分镜 — 影视前期策划工具" />
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>✧</text></svg>" />
+    <title>分镜</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
+    <script type="module" crossorigin src="/fenjing/assets/index-DSxpk27Y.js"></script>
+    <link rel="stylesheet" crossorigin href="/fenjing/assets/index-XptjBxIK.css">
+    <script src="/socket.io/socket.io.js"></script>
+    <style>.header-tabs{display:none!important}
+/* 隐藏导出按钮 */
+.export-wrap{display:none!important}
+.draw-panel{display:none;flex-direction:column;height:100%;width:100%;position:fixed;top:0;left:0;right:0;bottom:0;z-index:999;background:var(--bg,#f8fafc)}
+.draw-panel.open{display:flex}
+.draw-tb{display:flex;align-items:center;gap:8px;padding:8px 16px;background:var(--bg-card,#fff);border-bottom:1px solid var(--border,#e2e8f0);flex-shrink:0}
+.draw-tb-btn{width:32px;height:32px;border:1px solid var(--border,#e2e8f0);border-radius:6px;background:var(--bg-card,#fff);color:var(--text-secondary,#64748b);font-size:16px;cursor:pointer;display:flex;align-items:center;justify-content:center;transition:.12s}
+.draw-tb-btn:hover{background:var(--bg-hover,#f1f5f9);color:var(--text,#0f172a)}
+.draw-tb-btn.active{border-color:#4f46e5;color:#4f46e5;background:#eef2ff}
+.draw-tb-sep{width:1px;height:20px;background:var(--border,#e2e8f0);flex-shrink:0}
+.draw-tb-color{width:30px;height:30px;padding:2px;border:1px solid var(--border,#e2e8f0);border-radius:6px;background:var(--bg-card,#fff);cursor:pointer}
+.draw-tb-lbl{font-size:12px;color:var(--text-secondary,#64748b)}
+.draw-tb-rng{width:80px;height:4px;-webkit-appearance:none;appearance:none;background:var(--bg-hover,#f1f5f9);border-radius:2px;outline:none;cursor:pointer}
+.draw-tb-rng::-webkit-slider-thumb{-webkit-appearance:none;width:14px;height:14px;border-radius:50%;background:#4f46e5;cursor:pointer}
+.draw-tb-num{font-size:12px;color:var(--text-secondary,#64748b);min-width:18px;text-align:center}
+.draw-canvas-wrap{flex:1;overflow:hidden;background:#1a1a2e;position:relative}
+#draw-canvas{width:100%;height:100%;display:block;cursor:crosshair}
+.draw-panel .panel-header{padding:10px 20px;display:flex;align-items:center;justify-content:space-between;flex-shrink:0}
+.draw-panel .panel-header h2{font-size:16px;font-weight:700}
+.draw-back-btn{padding:6px 14px;border:1px solid var(--border,#e2e8f0);border-radius:6px;background:var(--bg-card,#fff);cursor:pointer;font-size:13px;color:var(--text-secondary,#64748b);transition:.12s}
+.draw-back-btn:hover{border-color:#4f46e5;color:#4f46e5}
+.draw-btn-active{background:var(--accent-light,#eef2ff)!important;color:var(--accent,#4f46e5)!important;border-color:var(--accent,#4f46e5)!important}
+.draw-shapes-wrap{position:relative}
+.draw-shapes-popup{position:absolute;top:100%;left:0;margin-top:4px;background:var(--bg-card,#fff);border:1px solid var(--border,#e2e8f0);border-radius:8px;box-shadow:0 4px 16px rgba(0,0,0,.15);z-index:1000;min-width:130px;padding:4px;display:flex;flex-direction:column;animation:drop-in .1s ease-out}
+.draw-shapes-popup button{display:flex;align-items:center;gap:6px;padding:6px 10px;border:none;background:transparent;cursor:pointer;font-size:12px;color:var(--text,#0f172a);border-radius:4px;text-align:left;transition:background .1s}
+.draw-shapes-popup button:hover{background:var(--bg-hover,#f1f5f9)}
+.draw-shapes-popup button.active{background:var(--accent-light,#eef2ff);color:var(--accent,#4f46e5);font-weight:600}
+@keyframes drop-in{0%{opacity:0;transform:translateY(-4px)}to{opacity:1;transform:translateY(0)}}
+.draw-panel .panel-actions{display:flex;gap:8px}
+.draw-panel .panel-actions button{padding:6px 14px;border:1px solid var(--border,#e2e8f0);border-radius:6px;background:var(--bg-card,#fff);cursor:pointer;font-size:12px;transition:.12s}
+.draw-panel .panel-actions button:hover{border-color:#4f46e5}
+.draw-panel .panel-actions .primary{background:#4f46e5;color:#fff;border-color:#4f46e5}
+/* 镜头绘图按钮 */
+.s-hot-btn{position:absolute;right:4px;bottom:4px;width:24px;height:24px;border-radius:4px;border:1px solid var(--border,#e2e8f0);background:rgba(15,15,26,.7);color:#ccc;font-size:12px;cursor:pointer;display:flex;align-items:center;justify-content:center;z-index:5;opacity:0;transition:opacity .15s}
+.s-cell.s-img:hover .s-hot-btn{opacity:1}
+.s-hot-btn:hover{background:#4f46e5;color:#fff;border-color:#4f46e5}
+.s-hot-btn.saved{color:#4f46e5;border-color:#4f46e5}
+.draw-mode-badge{font-size:12px;color:#64748b;margin-left:12px}
+</style>
+  </head>
+  <body>
+    <div id="app"></div>
+
+    <!-- 绘画面板（注入到分镜工具） -->
+    <div class="draw-panel" id="drawPanel">
+      <div class="panel-header">
+        <h2>✏️ 绘画板<span class="draw-mode-badge" id="drawModeBadge"></span></h2>
+        <div class="panel-actions">
+          <button id="drawSaveShot" class="primary" style="display:none">✓ 保存到镜头</button>
+          <button id="drawExport">⬇️ 导出 PNG</button>
+        </div>
+      </div>
+      <div class="draw-tb">
+        <button class="draw-tb-btn active" id="drawBrush" title="画笔">✏️</button>
+        <button class="draw-tb-btn" id="drawEraser" title="橡皮">🧹</button>
+        <div class="draw-shapes-wrap" id="shapesWrap">
+          <button class="draw-tb-btn" id="drawShapesBtn" title="形状工具">🔷 ▾</button>
+          <div class="draw-shapes-popup" id="shapesPopup" style="display:none">
+            <button data-shape="rect" class="active">⬜ 矩形</button>
+            <button data-shape="fillRect">◼ 实心矩形</button>
+            <button data-shape="circle">⭕ 圆形</button>
+            <button data-shape="fillCircle">● 实心圆</button>
+            <button data-shape="line">╱ 直线</button>
+            <button data-shape="arrow">➡ 箭头</button>
+            <button data-shape="triangle">△ 三角形</button>
+          </div>
+        </div>
+        <span class="draw-tb-sep"></span>
+        <input type="color" id="drawColor" value="#ffffff" class="draw-tb-color" title="颜色">
+        <span class="draw-tb-sep"></span>
+        <label class="draw-tb-lbl">粗细</label>
+        <input type="range" id="drawSize" min="1" max="30" value="3" class="draw-tb-rng">
+        <span class="draw-tb-num" id="drawSizeVal">3</span>
+        <span class="draw-tb-sep"></span>
+        <label class="draw-tb-lbl">平滑</label>
+        <input type="range" id="drawSmooth" min="0" max="10" value="5" class="draw-tb-rng">
+        <span class="draw-tb-num" id="drawSmoothVal">5</span>
+        <span class="draw-tb-sep"></span>
+        <label class="draw-tb-lbl">透明</label>
+        <input type="range" id="drawOpacity" min="1" max="100" value="100" class="draw-tb-rng">
+        <span class="draw-tb-num" id="drawOpacityVal">100%</span>
+        <span class="draw-tb-sep"></span>
+        <button class="draw-tb-btn" id="drawClear" title="清空">🗑️</button>
+        <button class="draw-tb-btn" id="drawFullscreen" title="全屏">⛶</button>
+        <button class="draw-back-btn" id="drawBack">← 返回分镜</button>
+      </div>
+      <div class="draw-canvas-wrap">
+        <canvas id="draw-canvas"></canvas>
+      </div>
+    </div>
+
+    <script>
+    // ─── 绘画 + 镜头绘图注入 ──────────────────────────
+    (function() {
+      'use strict';
+
+      // ── DOM 引用 ──
+      const drawPanel   = document.getElementById('drawPanel');
+      const canvas      = document.getElementById('draw-canvas');
+      const appEl       = document.getElementById('app');
+      const ctx         = canvas.getContext('2d');
+
+      // ── 绘画状态 ──
+      let isDrawing = false, lastX = 0, lastY = 0, tool = 'brush', shapeTool = null;
+      let startX = 0, startY = 0; // for shape tools
+      let offscreen = document.createElement('canvas');
+      let currentShotId = null;      // 当前正在绘制的镜头 ID
+      let currentShotNum = null;     // 镜头编号（显示用）
+
+      // ── Socket.IO（连接分镜 namespace）──
+      let fenjingSocket = null;
+      let localShots = [];           // shots 本地副本，与服务器同步
+      let localScenes = [];          // scenes 本地副本
+
+      function connectFenjing() {
+        if (typeof io === 'undefined') return setTimeout(connectFenjing, 500);
+        fenjingSocket = io('/fenjing');
+
+        fenjingSocket.on('connect', () => {
+          console.log('[绘画] Socket.IO 已连接到 /fenjing');
+        });
+
+        fenjingSocket.on('fenjing:state-sync', (state) => {
+          localShots = state.shots || [];
+          localScenes = state.scenes || [];
+          console.log('[绘画] 收到初始状态，shots:', localShots.length, 'scenes:', localScenes.length);
+        });
+
+        fenjingSocket.on('fenjing:shots-update', (shots) => {
+          localShots = shots;
+          console.log('[绘画] 收到 shots-update, 数量:', shots.length, '首镜 image:', typeof shots[0]?.image, shots[0]?.image ? '有' : '无');
+          // 刷新所有镜头行的绘图按钮状态
+          document.querySelectorAll('.shot-row').forEach(refreshShotRow);
+        });
+        fenjingSocket.on('fenjing:scenes-update', (scenes) => {
+          localScenes = scenes;
+          console.log('[绘画] 收到 scenes-update, 数量:', scenes.length);
+        });
+      }
+      connectFenjing();
+
+      // ── 画布尺寸 ──
+      function resizeCanvas() {
+        const wrap = canvas.parentElement;
+        const rect = wrap.getBoundingClientRect();
+        const w = Math.round(rect.width), h = Math.round(rect.height);
+        if (canvas.width === w && canvas.height === h) return;
+        if (canvas.width > 0 && canvas.height > 0) {
+          const tmp = document.createElement('canvas');
+          tmp.width = canvas.width; tmp.height = canvas.height;
+          tmp.getContext('2d').drawImage(canvas, 0, 0);
+          offscreen = tmp;
+        }
+        canvas.width = w; canvas.height = h;
+        ctx.fillStyle = '#1a1a2e';
+        ctx.fillRect(0, 0, w, h);
+        if (offscreen.width > 0) ctx.drawImage(offscreen, 0, 0, w, h);
+      }
+
+      new ResizeObserver(resizeCanvas).observe(canvas.parentElement);
+
+      // ── 坐标 ──
+      function getPos(e) {
+        const r = canvas.getBoundingClientRect();
+        const cx = e.touches ? e.touches[0].clientX : e.clientX;
+        const cy = e.touches ? e.touches[0].clientY : e.clientY;
+        return { x: (cx - r.left) * (canvas.width / r.width), y: (cy - r.top) * (canvas.height / r.height) };
+      }
+
+      function getCtxProps() {
+        const alpha = parseInt(document.getElementById('drawOpacity').value) / 100;
+        ctx.globalAlpha = alpha;
+        ctx.lineCap = 'round';
+        ctx.lineJoin = 'round';
+        if (tool === 'eraser') {
+          ctx.globalCompositeOperation = 'destination-out';
+          ctx.strokeStyle = 'rgba(0,0,0,1)';
+          ctx.lineWidth = parseInt(document.getElementById('drawSize').value) * 4;
+        } else if (shapeTool) {
+          ctx.globalCompositeOperation = 'source-over';
+          ctx.strokeStyle = document.getElementById('drawColor').value;
+          ctx.lineWidth = parseInt(document.getElementById('drawSize').value);
+        } else {
+          ctx.globalCompositeOperation = 'source-over';
+          ctx.strokeStyle = document.getElementById('drawColor').value;
+          ctx.lineWidth = parseInt(document.getElementById('drawSize').value);
+        }
+      }
+
+      function smoothLine(x1, y1, x2, y2) {
+        const smooth = parseInt(document.getElementById('drawSmooth').value);
+        if (smooth <= 0) {
+          ctx.beginPath(); ctx.moveTo(x1, y1); ctx.lineTo(x2, y2); ctx.stroke();
+          return;
+        }
+        const steps = Math.max(1, Math.round(smooth * 1.5));
+        for (let i = 1; i <= steps; i++) {
+          const t = i / steps;
+          const cx = x1 + (x2 - x1) * t;
+          const cy = y1 + (y2 - y1) * t;
+          const prevT = (i - 1) / steps;
+          const px = x1 + (x2 - x1) * prevT;
+          const py = y1 + (y2 - y1) * prevT;
+          ctx.beginPath(); ctx.moveTo(px, py); ctx.lineTo(cx, cy); ctx.stroke();
+        }
+      }
+
+      function start(e) {
+        e.preventDefault();
+        const p = getPos(e);
+        lastX = p.x; lastY = p.y;
+        startX = p.x; startY = p.y;
+        if (shapeTool) {
+          // For shapes, save offscreen state before drawing
+          const tmp = document.createElement('canvas');
+          tmp.width = canvas.width; tmp.height = canvas.height;
+          tmp.getContext('2d').drawImage(canvas, 0, 0);
+          offscreen = tmp;
+        }
+        isDrawing = true;
+      }
+
+      function move(e) {
+        if (!isDrawing) return; e.preventDefault();
+        const p = getPos(e);
+        getCtxProps();
+
+        if (shapeTool) {
+          // Restore canvas from offscreen (before previous shape preview)
+          ctx.clearRect(0, 0, canvas.width, canvas.height);
+          if (offscreen.width > 0) ctx.drawImage(offscreen, 0, 0);
+          ctx.globalCompositeOperation = 'source-over';
+          // Draw shape preview
+          drawShape(shapeTool, startX, startY, p.x, p.y, false);
+          lastX = p.x; lastY = p.y;
+          return;
+        }
+
+        if (tool === 'brush' || tool === 'eraser') {
+          smoothLine(lastX, lastY, p.x, p.y);
+        }
+        lastX = p.x; lastY = p.y;
+      }
+
+      function stop() {
+        if (!isDrawing) return;
+        isDrawing = false;
+        getCtxProps();
+        if (shapeTool) {
+          // Redraw from offscreen (clean state before preview)
+          ctx.clearRect(0, 0, canvas.width, canvas.height);
+          if (offscreen.width > 0) ctx.drawImage(offscreen, 0, 0);
+          // Draw final shape from start to last mouse position
+          drawShape(shapeTool, startX, startY, lastX, lastY, true);
+          // Update offscreen with final result
+          const tmp = document.createElement('canvas');
+          tmp.width = canvas.width; tmp.height = canvas.height;
+          tmp.getContext('2d').drawImage(canvas, 0, 0);
+          offscreen = tmp;
+        }
+        ctx.globalCompositeOperation = 'source-over';
+        ctx.globalAlpha = 1;
+      }
+
+      function drawShape(type, x1, y1, x2, y2, finalize) {
+        const dx = x2 - x1, dy = y2 - y1;
+        const strokeColor = document.getElementById('drawColor').value;
+        const lineW = parseInt(document.getElementById('drawSize').value);
+
+        if (type === 'rect') {
+          ctx.strokeStyle = strokeColor;
+          ctx.lineWidth = lineW;
+          ctx.strokeRect(x1, y1, dx, dy);
+        } else if (type === 'fillRect') {
+          ctx.fillStyle = strokeColor;
+          ctx.fillRect(x1, y1, dx, dy);
+        } else if (type === 'circle') {
+          const r = Math.sqrt(dx*dx + dy*dy) / 2;
+          const cx = (x1 + x2) / 2, cy = (y1 + y2) / 2;
+          ctx.strokeStyle = strokeColor;
+          ctx.lineWidth = lineW;
+          ctx.beginPath(); ctx.arc(cx, cy, Math.abs(r), 0, Math.PI * 2); ctx.stroke();
+        } else if (type === 'fillCircle') {
+          const r = Math.sqrt(dx*dx + dy*dy) / 2;
+          const cx = (x1 + x2) / 2, cy = (y1 + y2) / 2;
+          ctx.fillStyle = strokeColor;
+          ctx.beginPath(); ctx.arc(cx, cy, Math.abs(r), 0, Math.PI * 2); ctx.fill();
+        } else if (type === 'line') {
+          ctx.strokeStyle = strokeColor;
+          ctx.lineWidth = lineW;
+          ctx.beginPath(); ctx.moveTo(x1, y1); ctx.lineTo(x2, y2); ctx.stroke();
+        } else if (type === 'arrow') {
+          const angle = Math.atan2(dy, dx);
+          const len = Math.sqrt(dx*dx + dy*dy);
+          const headLen = Math.min(20, len * 0.3);
+          ctx.strokeStyle = strokeColor;
+          ctx.lineWidth = lineW;
+          ctx.beginPath(); ctx.moveTo(x1, y1); ctx.lineTo(x2, y2); ctx.stroke();
+          // Arrow head
+          ctx.fillStyle = strokeColor;
+          ctx.beginPath();
+          ctx.moveTo(x2, y2);
+          ctx.lineTo(x2 - headLen * Math.cos(angle - 0.4), y2 - headLen * Math.sin(angle - 0.4));
+          ctx.lineTo(x2 - headLen * Math.cos(angle + 0.4), y2 - headLen * Math.sin(angle + 0.4));
+          ctx.closePath(); ctx.fill();
+        } else if (type === 'triangle') {
+          const midX = (x1 + x2) / 2;
+          ctx.fillStyle = strokeColor;
+          ctx.beginPath();
+          ctx.moveTo(midX, y1);
+          ctx.lineTo(x2, y2);
+          ctx.lineTo(x1, y2);
+          ctx.closePath(); ctx.fill();
+        }
+      }
+
+      canvas.addEventListener('mousedown', start);
+      canvas.addEventListener('mousemove', move);
+      canvas.addEventListener('mouseup', stop);
+      canvas.addEventListener('mouseleave', stop);
+      canvas.addEventListener('touchstart', start, { passive: false });
+      canvas.addEventListener('touchmove', move, { passive: false });
+      canvas.addEventListener('touchend', stop);
+
+      // ── 工具绑定 ──
+      const brushBtn  = document.getElementById('drawBrush');
+      const eraserBtn = document.getElementById('drawEraser');
+      brushBtn.addEventListener('click', () => { tool = 'brush'; shapeTool = null; brushBtn.classList.add('active'); eraserBtn.classList.remove('active'); canvas.style.cursor = 'crosshair'; });
+      eraserBtn.addEventListener('click', () => { tool = 'eraser'; shapeTool = null; eraserBtn.classList.add('active'); brushBtn.classList.remove('active'); canvas.style.cursor = 'cell'; });
+
+      const sizeInput = document.getElementById('drawSize');
+      const sizeVal   = document.getElementById('drawSizeVal');
+      sizeInput.addEventListener('input', () => { sizeVal.textContent = sizeInput.value; });
+
+      const smoothInput = document.getElementById('drawSmooth');
+      const smoothVal   = document.getElementById('drawSmoothVal');
+      smoothInput.addEventListener('input', () => { smoothVal.textContent = smoothInput.value; });
+
+      const opacityInput = document.getElementById('drawOpacity');
+      const opacityVal   = document.getElementById('drawOpacityVal');
+      opacityInput.addEventListener('input', () => { opacityVal.textContent = opacityInput.value + '%'; });
+
+      // Shape popup
+      const shapesBtn = document.getElementById('drawShapesBtn');
+      const shapesPopup = document.getElementById('shapesPopup');
+      let currentShape = 'rect';
+      shapesBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        shapesPopup.style.display = shapesPopup.style.display === 'none' ? 'flex' : 'none';
+      });
+      document.addEventListener('click', () => { shapesPopup.style.display = 'none'; });
+      shapesPopup.addEventListener('click', (e) => e.stopPropagation());
+      shapesPopup.querySelectorAll('button').forEach(btn => {
+        btn.addEventListener('click', () => {
+          shapesPopup.querySelectorAll('button').forEach(b => b.classList.remove('active'));
+          btn.classList.add('active');
+          currentShape = btn.dataset.shape;
+          shapeTool = currentShape;
+          tool = 'shape';
+          brushBtn.classList.remove('active');
+          eraserBtn.classList.remove('active');
+          canvas.style.cursor = 'crosshair';
+          shapesPopup.style.display = 'none';
+          shapesBtn.innerHTML = btn.textContent.trim().slice(0, 2) + ' ▾';
+        });
+      });
+
+      document.getElementById('drawClear').addEventListener('click', () => {
+        offscreen.width = 0; offscreen.height = 0;
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        ctx.fillStyle = '#1a1a2e';
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+        ctx.globalAlpha = 1;
+      });
+
+      // Fullscreen
+      document.getElementById('drawFullscreen').addEventListener('click', () => {
+        if (!document.fullscreenElement) {
+          drawPanel.requestFullscreen();
+        } else {
+          document.exitFullscreen();
+        }
+      });
+
+      document.getElementById('drawExport').addEventListener('click', () => {
+        const link = document.createElement('a');
+        link.download = '分镜_' + new Date().toISOString().slice(0, 19).replace(/[:-]/g, '') + '.png';
+        link.href = canvas.toDataURL('image/png');
+        document.body.appendChild(link); link.click(); document.body.removeChild(link);
+      });
+
+      window.addEventListener('resize', () => { if (drawPanel.classList.contains('open')) resizeCanvas(); });
+
+      // ── 保存绘画到镜头 ──
+      const drawSaveShotBtn = document.getElementById('drawSaveShot');
+      drawSaveShotBtn.addEventListener('click', () => {
+        if (!currentShotId) { console.warn('[绘画] 保存失败: currentShotId 为空'); return; }
+        if (canvas.width === 0 || canvas.height === 0) {
+          console.warn('[绘画] 保存失败: 画布未初始化');
+          return;
+        }
+        const dataUrl = canvas.toDataURL('image/png');
+        console.log('[绘画] 保存到镜头', currentShotId, '图片大小:', (dataUrl.length / 1024).toFixed(0) + 'KB');
+        // 更新本地 shots 副本
+        const shot = localShots.find(s => s.id === currentShotId);
+        if (shot) {
+          shot.image = dataUrl;
+          console.log('[绘画] localShots 已更新, 已找到镜头:', shot.number);
+          // 直接更新 DOM 中的对应镜头画面（后备方案）
+          document.querySelectorAll('.shot-row').forEach(row => {
+            const numCell = row.querySelector('.s-cell.s-num');
+            const rowNum = numCell ? parseInt(numCell.textContent.trim()) : null;
+            if (rowNum === shot.number) {
+              const imgCell = row.querySelector('.s-cell.s-img');
+              if (imgCell) {
+                // 替换图片单元格内容为直接显示的 img
+                const existingImg = imgCell.querySelector('img.direct-shot-img');
+                if (existingImg) { existingImg.src = dataUrl; }
+                else {
+                  const img = document.createElement('img');
+                  img.className = 'direct-shot-img';
+                  img.src = dataUrl;
+                  img.style.cssText = 'width:100%;height:100%;object-fit:cover;border-radius:4px;position:absolute;top:0;left:0;z-index:2';
+                  // 让 imgCell 成为定位容器
+                  if (getComputedStyle(imgCell).position === 'static') imgCell.style.position = 'relative';
+                  // 隐藏内部原有的图片组件占位
+                  imgCell.querySelectorAll('.img-cell .img-placeholder, .img-cell .img-loading').forEach(el => el.style.display = 'none');
+                  imgCell.appendChild(img);
+                }
+              }
+            }
+          });
+          // 通过 Socket.IO 发送更新
+          if (fenjingSocket && fenjingSocket.connected) {
+            fenjingSocket.emit('fenjing:shots-update', localShots);
+            console.log('[绘画] 已发送 fenjing:shots-update');
+          } else {
+            console.warn('[绘画] 保存失败: fenjingSocket 未连接');
+          }
+        } else {
+          console.warn('[绘画] 保存失败: localShots 中未找到镜头', currentShotId);
+        }
+        // 关闭绘画面板
+        closeDrawPanel();
+      });
+
+      // ── 打开/关闭绘画面板 ──
+      function openDrawPanel(shotId, shotNum) {
+        currentShotId = shotId || null;
+        currentShotNum = shotNum || null;
+
+        const badge = document.getElementById('drawModeBadge');
+        const saveBtn = document.getElementById('drawSaveShot');
+        const drawBack = document.getElementById('drawBack');
+
+        if (shotId) {
+          badge.textContent = '→ 镜头 ' + (shotNum || '') + ' 绘图';
+          saveBtn.style.display = '';
+          // 如果有已有绘图，加载到画布
+          const shot = localShots.find(s => s.id === shotId);
+          if (shot && shot.image && typeof shot.image === 'string' && shot.image.startsWith('data:')) {
+            loadImageToCanvas(shot.image);
+          } else {
+            // 清空画布
+            offscreen.width = 0; offscreen.height = 0;
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            ctx.fillStyle = '#1a1a2e';
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+          }
+        } else {
+          badge.textContent = '';
+          saveBtn.style.display = 'none';
+        }
+
+        appEl.style.display = 'none';
+        drawPanel.classList.add('open');
+        // 更新返回按钮文字
+        drawBack.textContent = shotId ? '✕ 取消' : '← 返回分镜';
+        setTimeout(resizeCanvas, 100);
+      }
+
+      function closeDrawPanel() {
+        drawPanel.classList.remove('open');
+        appEl.style.display = '';
+        document.querySelectorAll('.h-btn.draw-btn-active').forEach(b => b.classList.remove('draw-btn-active'));
+        currentShotId = null;
+        currentShotNum = null;
+        // 退出全屏
+        if (document.fullscreenElement) {
+          document.exitFullscreen();
+        }
+      }
+
+      document.getElementById('drawBack').addEventListener('click', closeDrawPanel);
+
+      // ── 加载图片到画布 ──
+      function loadImageToCanvas(dataUrl) {
+        const img = new Image();
+        img.onload = () => {
+          const w = canvas.width, h = canvas.height;
+          ctx.clearRect(0, 0, w, h);
+          ctx.fillStyle = '#1a1a2e';
+          ctx.fillRect(0, 0, w, h);
+          // 居中绘制，保持比例
+          const scale = Math.min(w / img.width, h / img.height) * 0.85;
+          const dw = img.width * scale, dh = img.height * scale;
+          const dx = (w - dw) / 2, dy = (h - dh) / 2;
+          ctx.drawImage(img, dx, dy, dw, dh);
+          // 保存到 offscreen 供 resize 使用
+          const tmp = document.createElement('canvas');
+          tmp.width = w; tmp.height = h;
+          tmp.getContext('2d').drawImage(canvas, 0, 0);
+          offscreen = tmp;
+        };
+        img.src = dataUrl;
+      }
+
+      // ── 注入镜头绘图按钮 ──
+      function injectDrawButton(shotRow) {
+        if (shotRow.querySelector('.s-hot-btn')) return; // 已注入
+
+        // 获取镜头 ID — 从 shot-row 的 DOM 结构中无法直接获取，
+        // 我们在 .s-cell.s-img 中查找图片组件的引用，然后注入
+        const imgCell = shotRow.querySelector('.s-cell.s-img');
+        if (!imgCell) return;
+
+        // 让图片单元格 position:relative（若未设）
+        if (getComputedStyle(imgCell).position === 'static') {
+          imgCell.style.position = 'relative';
+        }
+
+        const btn = document.createElement('button');
+        btn.className = 's-hot-btn';
+        btn.innerHTML = '✏️';
+        btn.title = '绘制此镜头画面';
+        imgCell.appendChild(btn);
+
+        btn.addEventListener('click', (e) => {
+          e.stopPropagation();
+          // 从 DOM 中读取镜头编号
+          const numCell = shotRow.querySelector('.s-cell.s-num');
+          const shotNum = numCell ? parseInt(numCell.textContent.trim()) : null;
+          let shot = null;
+          if (shotNum) {
+            shot = localShots.find(s => s.number === shotNum);
+          }
+          if (!shot) {
+            // 降级：按行索引匹配
+            const rows = document.querySelectorAll('.shot-row:not(.new-shot-placeholder)');
+            let idx = 0;
+            rows.forEach((r, i) => { if (r === shotRow) idx = i; });
+            shot = localShots[idx];
+          }
+          if (!shot) {
+            console.warn('[绘画] 未找到对应镜头');
+            return;
+          }
+          openDrawPanel(shot.id, shot.number || shotNum);
+        });
+
+        // 刷新状态
+        refreshShotRow(shotRow);
+      }
+
+      // ── 刷新镜头行图标状态 ──
+      function refreshShotRow(shotRow) {
+        const btn = shotRow.querySelector('.s-hot-btn');
+        if (!btn) return;
+        // 从 DOM 中读取镜头编号
+        const numCell = shotRow.querySelector('.s-cell.s-num');
+        const shotNum = numCell ? parseInt(numCell.textContent.trim()) : null;
+        let shot = null;
+        if (shotNum) {
+          shot = localShots.find(s => s.number === shotNum);
+        }
+        if (!shot) {
+          // 降级：按行索引匹配
+          const rows = document.querySelectorAll('.shot-row:not(.new-shot-placeholder)');
+          let idx = 0;
+          rows.forEach((r, i) => { if (r === shotRow) idx = i; });
+          shot = localShots[idx];
+        }
+        if (!shot) return;
+        if (shot.image) {
+          btn.classList.add('saved');
+          btn.title = '编辑镜头画面';
+        } else {
+          btn.classList.remove('saved');
+          btn.title = '绘制此镜头画面';
+        }
+      }
+
+      // ── MutationObserver 监听镜头行出现 ──
+      // 扩展 MutationObserver：注入绘图按钮 + 右键菜单 + 图标替换
+      const observer = new MutationObserver(() => {
+        document.querySelectorAll('.shot-row:not(.new-shot-placeholder)').forEach(row => {
+          injectDrawButton(row);
+          bindContextMenu(row);
+        });
+        // 将新建分镜占位符的 "＋" 图标改为 🎬
+        document.querySelectorAll('.new-shot-placeholder .ph-img').forEach(el => {
+          if (el.textContent.trim() === '＋') el.textContent = '🎬';
+        });
+      });
+      observer.observe(document.getElementById('app') || document.body, {
+        childList: true, subtree: true,
+      });
+
+      // ── 顶栏绘画按钮（通用绘画、不关联镜头） ──
+      function initHeader() {
+        const headerRight = document.querySelector('.header .header-right');
+        if (!headerRight) return false;
+
+        const drawBtn = document.createElement('button');
+        drawBtn.className = 'h-btn';
+        drawBtn.innerHTML = '<span>✏️</span><span>绘画</span>';
+        drawBtn.title = '自由绘画板（不关联镜头）';
+        headerRight.insertBefore(drawBtn, headerRight.firstChild);
+
+        drawBtn.addEventListener('click', () => {
+          openDrawPanel(null, null);
+          drawBtn.classList.add('draw-btn-active');
+        });
+
+        return true;
+      }
+
+      // ── 等待 Vue 应用完全加载 ──
+      function waitForApp() {
+        if (initHeader()) {
+          console.log('[绘画] 已注入分镜工具');
+        } else {
+          setTimeout(waitForApp, 300);
+        }
+      }
+      waitForApp();
+
+      // 初始延迟后尝试一次 injection
+      setTimeout(() => {
+        document.querySelectorAll('.shot-row:not(.new-shot-placeholder)').forEach(row => {
+          injectDrawButton(row);
+          bindContextMenu(row);
+        });
+        document.querySelectorAll('.new-shot-placeholder .ph-img').forEach(el => {
+          if (el.textContent.trim() === '＋') el.textContent = '🎬';
+        });
+      }, 1000);
+
+      // ── 右键菜单 ─────────────────────────────────────────
+      // 创建菜单元素
+      const ctxMenu = document.createElement('div');
+      ctxMenu.id = 'shotContextMenu';
+      ctxMenu.style.cssText = 'display:none;position:fixed;z-index:9999;background:#fff;border:1px solid #e2e8f0;border-radius:8px;box-shadow:0 4px 16px rgba(0,0,0,.15);min-width:140px;padding:4px;font-size:13px';
+      ctxMenu.innerHTML = `
+        <button data-action="copy" style="display:flex;align-items:center;gap:8px;width:100%;padding:7px 12px;border:none;background:transparent;cursor:pointer;border-radius:4px;color:#0f172a">📋 复制镜头</button>
+        <button data-action="cut" style="display:flex;align-items:center;gap:8px;width:100%;padding:7px 12px;border:none;background:transparent;cursor:pointer;border-radius:4px;color:#0f172a">✂️ 剪切镜头</button>
+        <div style="height:1px;background:#e2e8f0;margin:3px 0"></div>
+        <button data-action="delete" style="display:flex;align-items:center;gap:8px;width:100%;padding:7px 12px;border:none;background:transparent;cursor:pointer;border-radius:4px;color:#ef4444">🗑️ 删除镜头</button>
+      `;
+      document.body.appendChild(ctxMenu);
+      let ctxShotRow = null;
+
+      // 点击菜单项
+      ctxMenu.addEventListener('click', (e) => {
+        const btn = e.target.closest('button');
+        if (!btn || !ctxShotRow) return;
+        const action = btn.dataset.action;
+        const numCell = ctxShotRow.querySelector('.s-cell.s-num');
+        const shotNum = numCell ? parseInt(numCell.textContent.trim()) : null;
+        let shot = null, idx = -1;
+        if (shotNum !== null) {
+          idx = localShots.findIndex(s => s.number === shotNum);
+          if (idx >= 0) shot = localShots[idx];
+        }
+        if (!shot) {
+          // fallback: match by row index
+          const rows = [...document.querySelectorAll('.shot-row:not(.new-shot-placeholder)')];
+          idx = rows.indexOf(ctxShotRow);
+          shot = localShots[idx] || null;
+        }
+
+        if (action === 'delete') {
+          if (!shot) return;
+          if (!confirm(`确定删除镜头 #${shot.number}？`)) return;
+          localShots.splice(idx, 1);
+          // 重新编号
+          localShots.forEach((s, i) => { s.order = i + 1; });
+          emitShotsUpdate();
+        } else if (action === 'copy') {
+          if (!shot) return;
+          const newId = Date.now().toString(36) + Math.random().toString(36).slice(2,5);
+          const maxNum = localShots.reduce((m, s) => Math.max(m, s.number || 0), 0);
+          const newShot = JSON.parse(JSON.stringify(shot));
+          newShot.id = newId;
+          newShot.number = maxNum + 1;
+          newShot.order = shot.order + 1;
+          newShot.image = null; // Don't copy image data
+          localShots.splice(idx + 1, 0, newShot);
+          // 重新编号
+          localShots.forEach((s, i) => { s.order = i + 1; });
+          emitShotsUpdate();
+        } else if (action === 'cut') {
+          if (!shot) return;
+          const copied = JSON.parse(JSON.stringify(shot));
+          const newId = Date.now().toString(36) + Math.random().toString(36).slice(2,5);
+          copied.id = newId;
+          copied.image = null;
+          localShots.splice(idx, 1);
+          // 粘贴到最后
+          const maxNum = localShots.reduce((m, s) => Math.max(m, s.number || 0), 0);
+          copied.number = maxNum + 1;
+          copied.order = localShots.length + 1;
+          localShots.push(copied);
+          localShots.forEach((s, i) => { s.order = i + 1; });
+          emitShotsUpdate();
+        }
+        ctxMenu.style.display = 'none';
+        ctxShotRow = null;
+      });
+
+      // 隐藏菜单
+      document.addEventListener('click', () => { ctxMenu.style.display = 'none'; ctxShotRow = null; });
+      document.addEventListener('contextmenu', () => { ctxMenu.style.display = 'none'; });
+
+      // 辅助：发送 shots 更新
+      function emitShotsUpdate() {
+        if (fenjingSocket && fenjingSocket.connected) {
+          fenjingSocket.emit('fenjing:shots-update', localShots);
+        }
+      }
+
+      // 在 MutationObserver 中添加右键绑定
+      function bindContextMenu(row) {
+        if (row.dataset.ctxBound) return;
+        row.dataset.ctxBound = '1';
+        row.addEventListener('contextmenu', (e) => {
+          e.preventDefault();
+          ctxShotRow = row;
+          ctxMenu.style.left = e.clientX + 'px';
+          ctxMenu.style.top = e.clientY + 'px';
+          ctxMenu.style.display = 'flex';
+          ctxMenu.style.flexDirection = 'column';
+        });
+      }
+
+      function fixSpinners() {
+        document.querySelectorAll('.img-cell .img-loading').forEach(el => {
+          const cell = el.closest('.img-cell');
+          if (!cell) return;
+          // 如果 spinner 存在超过 3 秒, 替换为 "+" 占位并尝试重新加载
+          if (!cell.dataset.spinnerFix) {
+            cell.dataset.spinnerFix = Date.now().toString();
+            setTimeout(() => {
+              const stillLoading = cell.querySelector('.img-loading');
+              if (stillLoading) {
+                // 加载超时, 强制显示占位符
+                const vueApp = document.getElementById('app')?.__vue_app__;
+                if (vueApp) {
+                  const state = vueApp._instance?.setupState;
+                  // 尝试从 DOM 获取镜头编号并强制设置为 null
+                  const row = cell.closest('.shot-row');
+                  if (row) {
+                    const numCell = row.querySelector('.s-cell.s-num');
+                    const num = numCell ? parseInt(numCell.textContent.trim()) : null;
+                    if (num !== null) {
+                      const shot = localShots.find(s => s.number === num);
+                      if (shot && shot.image === true) shot.image = null;
+                    }
+                  }
+                }
+                cell.innerHTML = '<div class="img-placeholder"><span class="ip-icon" style="color:var(--text-muted)">+</span></div>';
+              }
+            }, 3000);
+          }
+        });
+      }
+
+      // 修复转圈（等 Vue 渲染完成后）
+      setTimeout(() => {
+        const obs = new MutationObserver(() => {
+          fixSpinners();
+        });
+        const appEl = document.getElementById('app');
+        if (appEl) obs.observe(appEl, { childList: true, subtree: true });
+        fixSpinners();
+      }, 2000);
+
+      // 扩展 MutationObserver
+      // (observer already bound above)
+
+      // ── 新建场时不切换活动场景 ──
+      let prevSceneCount = document.querySelectorAll('.scene-tag').length;
+      const sceneObserver = new MutationObserver(() => {
+        const tags = document.querySelectorAll('.scene-tag');
+        if (tags.length > prevSceneCount && tags.length > 1) {
+          // 有新场被创建, 点击第一个场标签切回去
+          const firstTag = tags[0];
+          if (firstTag && !firstTag.classList.contains('active')) {
+            firstTag.click();
+          }
+        }
+        prevSceneCount = tags.length;
+      });
+      // 等 Vue 加载完成后开始观察
+      setTimeout(() => {
+        const appEl = document.getElementById('app');
+        if (appEl) sceneObserver.observe(appEl, { childList: true, subtree: true });
+      }, 2000);
+
+    })();
+    </script>
+  </body>
+</html>

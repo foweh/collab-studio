@@ -1,0 +1,33 @@
+{
+  "name": "collab-studio",
+  "version": "1.0.0",
+  "description": "Real-time collaborative creative studio — Scripts, Mind Maps & Stories over LAN. Zero setup, no cloud.",
+  "keywords": [
+    "collaboration",
+    "mindmap",
+    "screenplay",
+    "story",
+    "LAN",
+    "real-time",
+    "creative-writing"
+  ],
+  "homepage": "https://github.com/foweh/collab-studio",
+  "license": "MIT",
+  "author": "CollabStudio",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "test": "node server.js --port 3001 --join localhost:3000"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "dependencies": {
+    "bcryptjs": "^3.0.3",
+    "express": "^4.18.2",
+    "helmet": "^8.2.0",
+    "socket.io": "^4.7.2",
+    "socket.io-client": "^4.8.3",
+    "uuid": "^9.0.0"
+  }
+}
