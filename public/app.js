@@ -219,6 +219,7 @@ function openChat(targetName) {
   if (!modal || !nameEl || !msgsEl || !inputEl) return;
   nameEl.textContent = targetName;
   msgsEl.innerHTML = '';
+  delete modal.dataset.groupId;
   modal.dataset.chatWith = targetName;
   modal.style.display = 'block';
   socket.emit('chat-get-history', { with: targetName });
@@ -602,7 +603,7 @@ socket.on('group-message', function(data) {
   var modal = document.getElementById('chat-modal');
   var msgsEl = document.getElementById('chat-msgs');
   var isOpen = modal && modal.style.display === 'block';
-  var isThisGroup = modal && modal.dataset.groupId === data.groupId;
+  var isThisGroup = isOpen && modal.dataset.groupId === data.groupId;
 
   if (isThisGroup) {
     // 当前打开就是这个群
