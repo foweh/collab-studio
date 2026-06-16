@@ -605,15 +605,11 @@ socket.on('group-message', function(data) {
   var isOpen = modal && modal.style.display === 'block';
   var isThisGroup = isOpen && modal.dataset.groupId === data.groupId;
 
-  if (isThisGroup) {
-    // 当前打开就是这个群
+  // 自己的消息已在 sendGroupChat 中本地插入，这里跳过避免重复
+  if (isThisGroup && data.from !== myName) {
     var lastMsg = msgsEl.lastElementChild;
-    var isMe = data.from === myName;
-    var lastSame = lastMsg && (
-      (isMe && lastMsg.classList.contains('me') && lastMsg.classList.contains('group')) ||
-      (!isMe && !lastMsg.classList.contains('me') && lastMsg.classList.contains('group'))
-    );
-    msgsEl.innerHTML += renderGroupMsgHtml(data.from, data.text, data.time, isMe, lastSame);
+    var lastSame = lastMsg && !lastMsg.classList.contains('me') && lastMsg.classList.contains('group');
+    msgsEl.innerHTML += renderGroupMsgHtml(data.from, data.text, data.time, false, lastSame);
     msgsEl.scrollTop = msgsEl.scrollHeight;
   }
 
