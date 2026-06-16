@@ -170,7 +170,31 @@ function updateUIBasedOnRole() {
   }
 }
 
-// ─── 私聊 ────────────────────────────────────────────────
+// ─── 私聊（微信风格） ────────────────────────────────────
+
+// 生成聊天气泡头像 HTML
+function chatAvatarHtml(userName) {
+  const avatar = avatarMap[userName];
+  const initial = userName.charAt(0).toUpperCase();
+  const colorIdx = userName.length % AVATAR_COLORS.length;
+  const bgColor = AVATAR_COLORS[colorIdx];
+  if (avatar) {
+    return '<div class="chat-avatar" style="background-image:url(/avatars/' + avatar + '?v=' + Date.now() + ');background-size:cover;background-position:center"></div>';
+  }
+  return '<div class="chat-avatar" style="background:' + bgColor + '">' + esc(initial) + '</div>';
+}
+
+// 渲染单条聊天气泡
+function renderMsgHtml(from, text, time, isMe, merge) {
+  var mc = merge ? ' merge' : '';
+  var side = isMe ? ' me' : '';
+  return '<div class="chat-msg' + side + mc + '">' +
+    chatAvatarHtml(from) +
+    '<div class="chat-bubble">' + esc(text) + '</div>' +
+    '<span class="chat-time">' + new Date(time).toLocaleTimeString() + '</span>' +
+  '</div>';
+}
+
 function openChat(targetName) {
   const modal = document.getElementById('chat-modal');
   const nameEl = document.getElementById('chat-with');
@@ -180,7 +204,7 @@ function openChat(targetName) {
   nameEl.textContent = targetName;
   msgsEl.innerHTML = '';
   modal.dataset.chatWith = targetName;
-  modal.style.display = 'flex';
+  modal.style.display = 'block';
   socket.emit('chat-get-history', { with: targetName });
   setTimeout(() => inputEl.focus(), 100);
 }
@@ -188,13 +212,12 @@ function openChat(targetName) {
 socket.on('chat-history', ({ with: withName, messages }) => {
   const msgsEl = document.getElementById('chat-msgs');
   if (!msgsEl) return;
-  msgsEl.innerHTML = (messages || []).map(m => {
+  const list = messages || [];
+  msgsEl.innerHTML = list.map((m, i) => {
     const isMe = m.from === myName;
-    return `<div class="chat-msg ${isMe ? 'me' : ''}">
-      <div class="cm-from">${isMe ? '我' : esc(m.from)}</div>
-      <div class="cm-text">${esc(m.text)}</div>
-      <div class="cm-time">${new Date(m.time).toLocaleTimeString()}</div>
-    </div>`;
+    const prev = i > 0 ? list[i - 1] : null;
+    const merge = prev && prev.from === m.from;
+    return renderMsgHtml(m.from, m.text, m.time, isMe, merge);
   }).join('');
   msgsEl.scrollTop = msgsEl.scrollHeight;
 });
@@ -205,14 +228,16 @@ socket.on('chat-message', ({ from, text, time }) => {
   if (!msgsEl) return;
   const chatWith = modal?.dataset.chatWith;
   if (chatWith === from || from === myName) {
-    msgsEl.innerHTML += `<div class="chat-msg">
-      <div class="cm-from">${esc(from)}</div>
-      <div class="cm-text">${esc(text)}</div>
-      <div class="cm-time">${new Date(time).toLocaleTimeString()}</div>
-    </div>`;
+    const lastMsg = msgsEl.lastElementChild;
+    const isMe = from === myName;
+    const lastSame = lastMsg && (
+      (isMe && lastMsg.classList.contains('me')) ||
+      (!isMe && !lastMsg.classList.contains('me'))
+    );
+    msgsEl.innerHTML += renderMsgHtml(from, text, time, isMe, lastSame);
     msgsEl.scrollTop = msgsEl.scrollHeight;
   }
-  // 通知提示 - 使用美观弹窗
+  // 通知提示
   if (chatWith !== from && from !== myName) {
     showNotification(from, text);
   }
@@ -230,11 +255,9 @@ function sendChat() {
   // 本地立即显示
   const msgsEl = document.getElementById('chat-msgs');
   if (msgsEl) {
-    msgsEl.innerHTML += `<div class="chat-msg me">
-      <div class="cm-from">我</div>
-      <div class="cm-text">${esc(text)}</div>
-      <div class="cm-time">${new Date().toLocaleTimeString()}</div>
-    </div>`;
+    const lastMsg = msgsEl.lastElementChild;
+    const lastMe = lastMsg && lastMsg.classList.contains('me');
+    msgsEl.innerHTML += renderMsgHtml(myName, text, Date.now(), true, lastMe);
     msgsEl.scrollTop = msgsEl.scrollHeight;
   }
 }
@@ -339,6 +362,37 @@ function showToast(msg) {
   toastTimer = setTimeout(() => { el.style.opacity = '0'; }, 3000);
 }
 
+// ─── 拖拽聊天窗口 ──────────────────────────────────────
+(function initDrag() {
+  var header = document.querySelector('.chat-modal-header');
+  var modal = document.getElementById('chat-modal');
+  if (!header || !modal) return;
+  var dragging = false, startX, startY, startLeft, startTop;
+  function onDrag(e) {
+    if (!dragging) return;
+    modal.style.left = (startLeft + e.clientX - startX) + 'px';
+    modal.style.top = (startTop + e.clientY - startY) + 'px';
+  }
+  function stopDrag() {
+    dragging = false;
+    document.removeEventListener('mousemove', onDrag);
+    document.removeEventListener('mouseup', stopDrag);
+  }
+  header.addEventListener('mousedown', function(e) {
+    if (e.target.closest('.chat-modal-close')) return;
+    dragging = true;
+    var rect = modal.getBoundingClientRect();
+    startX = e.clientX; startY = e.clientY;
+    startLeft = rect.left; startTop = rect.top;
+    modal.style.left = startLeft + 'px';
+    modal.style.top = startTop + 'px';
+    modal.style.right = 'auto';
+    modal.style.bottom = 'auto';
+    document.addEventListener('mousemove', onDrag);
+    document.addEventListener('mouseup', stopDrag);
+  });
+})();
+
 // ─── 美观消息通知弹窗 ─────────────────────────────────
 let notifTimer = null;
 function showNotification(from, text) {
@@ -350,20 +404,21 @@ function showNotification(from, text) {
     document.body.appendChild(container);
   }
   const card = document.createElement('div');
+  const notifAvatar = avatarMap[from];
   const initial = from.charAt(0).toUpperCase();
-  const colors = ['#4f46e5','#0891b2','#059669','#d97706','#dc2626','#7c3aed','#db2777','#2563eb'];
-  const colorIdx = from.length % colors.length;
-  const bgColor = colors[colorIdx];
+  const colorIdx = from.length % AVATAR_COLORS.length;
+  const bgColor = AVATAR_COLORS[colorIdx];
   const shortText = text.length > 40 ? text.slice(0, 40) + '...' : text;
-  card.style.cssText = 'pointer-events:auto;background:#fff;border:1px solid #e2e8f0;border-radius:12px;padding:12px 14px;box-shadow:0 4px 20px rgba(0,0,0,0.12);display:flex;align-items:center;gap:10px;cursor:pointer;transition:all 0.3s ease;transform:translateX(120%);opacity:0;animation:notifIn 0.35s ease forwards';
-  card.innerHTML = `
-    <div style="width:36px;height:36px;border-radius:50%;background:${bgColor};color:#fff;display:flex;align-items:center;justify-content:center;font-size:14px;font-weight:700;flex-shrink:0">${initial}</div>
-    <div style="flex:1;min-width:0">
-      <div style="font-size:13px;font-weight:600;color:#0f172a">${esc(from)}</div>
-      <div style="font-size:12px;color:#64748b;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(shortText)}</div>
-    </div>
-    <div style="font-size:10px;color:#94a3b8;flex-shrink:0">回复</div>
-  `;
+  const avatarStyle = notifAvatar
+    ? 'background-image:url(/avatars/' + notifAvatar + '?v=' + Date.now() + ');background-size:cover;background-position:center'
+    : 'background:' + bgColor;
+  card.style.cssText = 'pointer-events:auto;background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:12px 14px;box-shadow:0 8px 30px rgba(0,0,0,0.4);display:flex;align-items:center;gap:10px;cursor:pointer;transition:all 0.3s ease;transform:translateX(120%);opacity:0;animation:notifIn 0.35s ease forwards';
+  card.innerHTML = '<div style="width:36px;height:36px;border-radius:50%;color:#fff;display:flex;align-items:center;justify-content:center;font-size:14px;font-weight:700;flex-shrink:0;' + avatarStyle + '">' + (notifAvatar ? '' : initial) + '</div>' +
+    '<div style="flex:1;min-width:0">' +
+      '<div style="font-size:13px;font-weight:600;color:var(--text)">' + esc(from) + '</div>' +
+      '<div style="font-size:12px;color:var(--text-dim);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + esc(shortText) + '</div>' +
+    '</div>' +
+    '<div style="font-size:10px;color:var(--text-dim);flex-shrink:0">回复</div>';
   card.addEventListener('click', () => {
     card.style.transform = 'translateX(120%)';
     card.style.opacity = '0';
@@ -485,6 +540,8 @@ let isAdmin = savedAuth ? savedAuth.isAdmin : false;
 let myRole = savedAuth ? (savedAuth.role || (isAdmin ? 'editor' : 'commenter')) : 'commenter';
 let myToken = savedAuth ? savedAuth.token : '';
 let myAvatar = savedAuth ? (savedAuth.avatar || '') : '';
+const avatarMap = {}; // userName → avatar filename
+const AVATAR_COLORS = ['#4f46e5','#0891b2','#059669','#d97706','#dc2626','#7c3aed','#db2777','#2563eb'];
 
 // 初始化头像
 function updateAvatar(src) {
@@ -513,6 +570,7 @@ socket.on('connect', () => {
 });
 
 socket.on('login-success', ({ userName, isAdmin: admin, role, avatar }) => {
+  avatarMap[userName] = avatar || '';
   isAdmin = admin;
   myRole = role || (isAdmin ? 'editor' : 'commenter');
   if (avatar) {
@@ -651,6 +709,7 @@ socket.on('scan-status', ({ state, remaining }) => {
 
 socket.on('online-users', (users) => {
   onlineUsers = users;
+  users.forEach(u => { avatarMap[u.name] = u.avatar || ''; });
   renderOnlineUsers();
   refreshAdminStatus();
 });
@@ -783,6 +842,7 @@ function renderOnlineUsers() {
 
 // 实时同步头像变更
 socket.on('user-avatar-updated', ({ name, avatar }) => {
+  avatarMap[name] = avatar || '';
   const user = onlineUsers.find(u => u.name === name);
   if (user) {
     user.avatar = avatar;
