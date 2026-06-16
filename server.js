@@ -1665,6 +1665,8 @@ function handleBridgeMessage(fromId, msg) {
         if (msg.state) {
           fenjingState = msg.state;
           fenjingNsp.emit('fenjing:state-sync', fenjingState);
+          saveFenjingState(fenjingState);
+          broadcastToPeers(msg, fromId);
         }
         break;
     }

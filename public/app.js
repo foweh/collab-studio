@@ -2057,7 +2057,7 @@ function initUI() {
   
   if (refreshLanBtn) {
     refreshLanBtn.addEventListener('click', () => {
-      socket.emit('lan-scan');
+      socket.emit('refresh-lan');
     });
   }
   
