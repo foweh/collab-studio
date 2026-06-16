@@ -9,6 +9,37 @@
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
+    <script>
+    // ── 分镜状态引导：从服务器预取项目列表，填入 localStorage ──
+    // 作用：让多个浏览器看到相同的分镜项目列表（不依赖各自 localStorage）
+    (function(){
+      try {
+        var xhr = new XMLHttpRequest();
+        xhr.open('GET', '/fenjing/state', false);
+        xhr.send();
+        if (xhr.status === 200) {
+          var data = JSON.parse(xhr.responseText);
+          if (data.projects && data.projects.length > 0) {
+            // 填入项目列表
+            localStorage.setItem('fenjing-projects', JSON.stringify({
+              projects: data.projects,
+              activeId: data.activeId || data.projects[0].id
+            }));
+            // 填入每个项目的数据
+            if (data.data) {
+              for (var pid in data.data) {
+                if (data.data.hasOwnProperty(pid)) {
+                  localStorage.setItem('fenjing-project-' + pid, JSON.stringify(data.data[pid]));
+                }
+              }
+            }
+          }
+        }
+      } catch(e) {
+        console.warn('[分镜引导] 同步获取状态失败:', e);
+      }
+    })();
+    </script>
     <script type="module" crossorigin src="/fenjing/assets/index-DSxpk27Y.js"></script>
     <link rel="stylesheet" crossorigin href="/fenjing/assets/index-XptjBxIK.css">
     <script src="/socket.io/socket.io.js"></script>
@@ -125,10 +156,14 @@
       let fenjingSocket = null;
       let localShots = [];           // shots 本地副本，与服务器同步
       let localScenes = [];          // scenes 本地副本
+      let lockedShots = {};          // 被其他人锁定的镜头 { shotId: { user, shotNum } }
 
       function connectFenjing() {
         if (typeof io === 'undefined') return setTimeout(connectFenjing, 500);
-        fenjingSocket = io('/fenjing');
+        const fenjingUser = localStorage.getItem('collab-user-name') || sessionStorage.getItem('collab-auth')
+          ? (JSON.parse(sessionStorage.getItem('collab-auth'))?.name || '')
+          : '';
+        fenjingSocket = io('/fenjing', { query: { user: fenjingUser || '未知' } });
 
         fenjingSocket.on('connect', () => {
           console.log('[绘画] Socket.IO 已连接到 /fenjing');
@@ -142,13 +177,38 @@
 
         fenjingSocket.on('fenjing:shots-update', (shots) => {
           localShots = shots;
-          console.log('[绘画] 收到 shots-update, 数量:', shots.length, '首镜 image:', typeof shots[0]?.image, shots[0]?.image ? '有' : '无');
-          // 刷新所有镜头行的绘图按钮状态
+          console.log('[绘画] 收到 shots-update, 数量:', shots.length);
           document.querySelectorAll('.shot-row').forEach(refreshShotRow);
         });
         fenjingSocket.on('fenjing:scenes-update', (scenes) => {
           localScenes = scenes;
           console.log('[绘画] 收到 scenes-update, 数量:', scenes.length);
+        });
+
+        // ── 镜头编辑锁 ──
+        fenjingSocket.on('fenjing:shot-locked', ({ shotId, shotNum, user }) => {
+          lockedShots[shotId] = { user, shotNum };
+          document.querySelectorAll('.shot-row').forEach(refreshShotRow);
+          console.log('[绘画] 镜头被锁定:', shotId, user);
+        });
+        fenjingSocket.on('fenjing:shot-unlocked', ({ shotId }) => {
+          delete lockedShots[shotId];
+          document.querySelectorAll('.shot-row').forEach(refreshShotRow);
+          console.log('[绘画] 镜头解锁:', shotId);
+        });
+        // ── 项目列表同步（从服务器更新localStorage） ──
+        fenjingSocket.on('fenjing:projects-sync', ({ projects, activeId, data }) => {
+          if (projects && projects.length > 0) {
+            localStorage.setItem('fenjing-projects', JSON.stringify({ projects, activeId: activeId || projects[0].id }));
+            if (data) {
+              for (var pid in data) {
+                if (data.hasOwnProperty(pid)) {
+                  localStorage.setItem('fenjing-project-' + pid, JSON.stringify(data[pid]));
+                }
+              }
+            }
+            console.log('[绘画] 项目列表已同步:', projects.length, '个项目');
+          }
         });
       }
       connectFenjing();
@@ -405,7 +465,7 @@
 
       window.addEventListener('resize', () => { if (drawPanel.classList.contains('open')) resizeCanvas(); });
 
-      // ── 保存绘画到镜头 ──
+      // ── 保存绘画到镜头（HTTP上传图片，避免阻塞Socket.IO同步） ──
       const drawSaveShotBtn = document.getElementById('drawSaveShot');
       drawSaveShotBtn.addEventListener('click', () => {
         if (!currentShotId) { console.warn('[绘画] 保存失败: currentShotId 为空'); return; }
@@ -415,53 +475,84 @@
         }
         const dataUrl = canvas.toDataURL('image/png');
         console.log('[绘画] 保存到镜头', currentShotId, '图片大小:', (dataUrl.length / 1024).toFixed(0) + 'KB');
-        // 更新本地 shots 副本
-        const shot = localShots.find(s => s.id === currentShotId);
-        if (shot) {
-          shot.image = dataUrl;
-          console.log('[绘画] localShots 已更新, 已找到镜头:', shot.number);
-          // 直接更新 DOM 中的对应镜头画面（后备方案）
-          document.querySelectorAll('.shot-row').forEach(row => {
-            const numCell = row.querySelector('.s-cell.s-num');
-            const rowNum = numCell ? parseInt(numCell.textContent.trim()) : null;
-            if (rowNum === shot.number) {
-              const imgCell = row.querySelector('.s-cell.s-img');
-              if (imgCell) {
-                // 替换图片单元格内容为直接显示的 img
-                const existingImg = imgCell.querySelector('img.direct-shot-img');
-                if (existingImg) { existingImg.src = dataUrl; }
-                else {
-                  const img = document.createElement('img');
-                  img.className = 'direct-shot-img';
-                  img.src = dataUrl;
-                  img.style.cssText = 'width:100%;height:100%;object-fit:cover;border-radius:4px;position:absolute;top:0;left:0;z-index:2';
-                  // 让 imgCell 成为定位容器
-                  if (getComputedStyle(imgCell).position === 'static') imgCell.style.position = 'relative';
-                  // 隐藏内部原有的图片组件占位
-                  imgCell.querySelectorAll('.img-cell .img-placeholder, .img-cell .img-loading').forEach(el => el.style.display = 'none');
-                  imgCell.appendChild(img);
-                }
+        // 先关闭面板（不影响用户体验）
+        closeDrawPanel();
+        // 异步上传图片到服务器
+        fetch('/api/fenjing/upload-image', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ shotId: currentShotId, image: dataUrl })
+        })
+        .then(r => r.json())
+        .then(resp => {
+          if (resp.ok) {
+            console.log('[绘画] 图片上传成功:', resp.url);
+            // 更新本地 shots 副本（用URL替代 dataURL）
+            const shot = localShots.find(s => s.id === currentShotId);
+            if (shot) {
+              shot.image = resp.url;
+              // 更新DOM中的图片
+              updateShotImageInDOM(shot);
+              // 发送轻量级更新（只含URL，不含base64数据）
+              if (fenjingSocket && fenjingSocket.connected) {
+                fenjingSocket.emit('fenjing:shots-update', localShots);
+                console.log('[绘画] 已发送 lightweight fenjing:shots-update');
               }
             }
-          });
-          // 通过 Socket.IO 发送更新
-          if (fenjingSocket && fenjingSocket.connected) {
-            fenjingSocket.emit('fenjing:shots-update', localShots);
-            console.log('[绘画] 已发送 fenjing:shots-update');
           } else {
-            console.warn('[绘画] 保存失败: fenjingSocket 未连接');
+            console.warn('[绘画] 上传失败，退回到内联方式:', resp.error);
+            fallbackSave(dataUrl);
           }
-        } else {
-          console.warn('[绘画] 保存失败: localShots 中未找到镜头', currentShotId);
-        }
-        // 关闭绘画面板
-        closeDrawPanel();
+        })
+        .catch(err => {
+          console.warn('[绘画] 上传网络错误，退回到内联方式:', err);
+          fallbackSave(dataUrl);
+        });
       });
+
+      // 备选：内联保存（当HTTP上传失败时）
+      function fallbackSave(dataUrl) {
+        const shot = localShots.find(s => s.id === currentShotId);
+        if (!shot) return;
+        shot.image = dataUrl;
+        updateShotImageInDOM(shot);
+        if (fenjingSocket && fenjingSocket.connected) {
+          fenjingSocket.emit('fenjing:shots-update', localShots);
+        }
+      }
+
+      // ── 更新镜头图片DOM ──
+      function updateShotImageInDOM(shot) {
+        document.querySelectorAll('.shot-row').forEach(row => {
+          const numCell = row.querySelector('.s-cell.s-num');
+          const rowNum = numCell ? parseInt(numCell.textContent.trim()) : null;
+          if (rowNum === shot.number) {
+            const imgCell = row.querySelector('.s-cell.s-img');
+            if (!imgCell) return;
+            const existingImg = imgCell.querySelector('img.direct-shot-img');
+            if (existingImg) { existingImg.src = shot.image; }
+            else {
+              const img = document.createElement('img');
+              img.className = 'direct-shot-img';
+              img.src = shot.image;
+              img.style.cssText = 'width:100%;height:100%;object-fit:cover;border-radius:4px;position:absolute;top:0;left:0;z-index:2';
+              if (getComputedStyle(imgCell).position === 'static') imgCell.style.position = 'relative';
+              imgCell.querySelectorAll('.img-cell .img-placeholder, .img-cell .img-loading').forEach(el => el.style.display = 'none');
+              imgCell.appendChild(img);
+            }
+          }
+        });
+      }
 
       // ── 打开/关闭绘画面板 ──
       function openDrawPanel(shotId, shotNum) {
         currentShotId = shotId || null;
         currentShotNum = shotNum || null;
+
+        // 锁定镜头，防止其他人同时编辑
+        if (shotId && fenjingSocket && fenjingSocket.connected) {
+          fenjingSocket.emit('fenjing:shot-lock', { shotId, shotNum });
+        }
 
         const badge = document.getElementById('drawModeBadge');
         const saveBtn = document.getElementById('drawSaveShot');
@@ -497,6 +588,10 @@
         drawPanel.classList.remove('open');
         appEl.style.display = '';
         document.querySelectorAll('.h-btn.draw-btn-active').forEach(b => b.classList.remove('draw-btn-active'));
+        // 解锁镜头
+        if (currentShotId && fenjingSocket && fenjingSocket.connected) {
+          fenjingSocket.emit('fenjing:shot-unlock', { shotId: currentShotId });
+        }
         currentShotId = null;
         currentShotNum = null;
         // 退出全屏
@@ -602,6 +697,24 @@
           btn.classList.remove('saved');
           btn.title = '绘制此镜头画面';
         }
+        // ── 镜头锁定指示 ──
+        let lockEl = shotRow.querySelector('.shot-lock-badge');
+        if (lockedShots[shot.id]) {
+          btn.disabled = true;
+          btn.style.opacity = '0.4';
+          btn.title = lockedShots[shot.id].user + ' 正在编辑此镜头';
+          if (!lockEl) {
+            lockEl = document.createElement('span');
+            lockEl.className = 'shot-lock-badge';
+            lockEl.style.cssText = 'position:absolute;top:2px;right:2px;font-size:11px;background:rgba(255,50,50,0.85);color:#fff;padding:1px 5px;border-radius:3px;z-index:10;pointer-events:none';
+            shotRow.querySelector('.s-cell.s-img')?.appendChild(lockEl) || shotRow.appendChild(lockEl);
+          }
+          lockEl.textContent = '🔒 ' + (lockedShots[shot.id].user || '编辑中');
+        } else {
+          btn.disabled = false;
+          btn.style.opacity = '';
+          if (lockEl) lockEl.remove();
+        }
       }
 
       // ── MutationObserver 监听镜头行出现 ──
@@ -619,6 +732,34 @@
       observer.observe(document.getElementById('app') || document.body, {
         childList: true, subtree: true,
       });
+
+      // ── 监测本地新项目创建，同步到服务器 ──
+      let knownProjects = {};
+      try {
+        const stored = localStorage.getItem('fenjing-projects');
+        if (stored) {
+          const parsed = JSON.parse(stored);
+          (parsed.projects || []).forEach(p => { knownProjects[p.id] = true; });
+        }
+      } catch(e) {}
+      // 每秒检查是否有新项目
+      setInterval(() => {
+        try {
+          const stored = localStorage.getItem('fenjing-projects');
+          if (!stored) return;
+          const parsed = JSON.parse(stored);
+          (parsed.projects || []).forEach(p => {
+            if (!knownProjects[p.id]) {
+              knownProjects[p.id] = true;
+              // 通知服务器创建项目
+              if (fenjingSocket && fenjingSocket.connected) {
+                fenjingSocket.emit('fenjing:project-create', { id: p.id, name: p.name || '未命名项目' });
+                console.log('[项目同步] 新项目已同步到服务器:', p.name);
+              }
+            }
+          });
+        } catch(e) {}
+      }, 2000);
 
       // ── 顶栏绘画按钮（通用绘画、不关联镜头） ──
       function initHeader() {

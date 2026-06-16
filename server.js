@@ -22,6 +22,7 @@ const { users } = auth; // 直接引用 users 对象以兼容现有代码
 ensureDataDir();
 const PROJECTS_FILE = path.join(DATA_DIR, 'projects.json');
 const FENJING_FILE = path.join(DATA_DIR, 'fenjing-state.json');
+const FENJING_PROJECTS_FILE = path.join(DATA_DIR, 'fenjing-projects.json');
 const PWD_RESETS_FILE = path.join(DATA_DIR, 'password-resets.json');
 const MSG_PERM_FILE = path.join(DATA_DIR, 'message-permissions.json');
 const ANNOTATIONS_FILE = path.join(DATA_DIR, 'annotations.json');
@@ -95,6 +96,8 @@ function saveMsgPermissions() { saveJSON(MSG_PERM_FILE, messagePermissions); }
 // ─── 分镜状态 ──────────────────────────────────────────
 function loadFenjingState() { return loadJSON(FENJING_FILE, null); }
 function saveFenjingState(state) { saveJSON(FENJING_FILE, state); }
+function loadFenjingProjectsMeta() { return loadJSON(FENJING_PROJECTS_FILE, null); }
+function saveFenjingProjectsMeta(meta) { saveJSON(FENJING_PROJECTS_FILE, meta); }
 
 // ─── 群聊数据 ────────────────────────────────────────────
 let groups = loadJSON(GROUPS_FILE, []);
@@ -295,6 +298,43 @@ app.post('/api/upload-avatar', async (req, res) => {
 
 app.use(express.static(path.join(__dirname, 'public')));
 app.use('/fenjing', express.static(path.join(__dirname, 'public/fenjing')));
+
+// ─── 分镜图片上传 ────────────────────────────────────────
+const FENJING_IMG_DIR = path.join(DATA_DIR, 'fenjing-images');
+if (!fs.existsSync(FENJING_IMG_DIR)) fs.mkdirSync(FENJING_IMG_DIR, { recursive: true });
+app.use('/fenjing-images', express.static(FENJING_IMG_DIR));
+
+app.post('/api/fenjing/upload-image', (req, res) => {
+  const { shotId, image } = req.body;
+  if (!shotId || !image || typeof image !== 'string') return res.status(400).json({ error: '缺少参数' });
+  // 去掉 data:image/png;base64, 前缀
+  const match = image.match(/^data:image\/(\w+);base64,(.+)$/);
+  if (!match) return res.status(400).json({ error: '格式错误' });
+  const ext = match[1] === 'jpeg' ? 'jpg' : match[1];
+  const b64 = match[2];
+  const filename = shotId + '_' + Date.now() + '.' + ext;
+  const filepath = path.join(FENJING_IMG_DIR, filename);
+  try {
+    fs.writeFileSync(filepath, Buffer.from(b64, 'base64'));
+    res.json({ ok: true, url: '/fenjing-images/' + filename });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// ─── 分镜状态端点（用于客户端引导） ──────────────────────
+app.get('/fenjing/state', (req, res) => {
+  const meta = loadFenjingProjectsMeta() || { projects: [], activeId: '' };
+  const projects = {};
+  const projList = meta.projects || [];
+  (projList).forEach(p => {
+    const data = loadJSON(path.join(DATA_DIR, 'fenjing-p-' + p.id + '.json'), null);
+    if (data) projects[p.id] = data;
+  });
+  // Also include current global state
+  const currentState = fenjingState || { projectName: '未命名项目', scenes: [], shots: [] };
+  res.json({ projects: projList, activeId: meta.activeId, data: projects, currentState });
+});
 
 // ─── 登录诊断端点 ────────────────────────────────────────
 app.get('/api/auth-check', async (req, res) => {
@@ -1661,11 +1701,34 @@ function handleBridgeMessage(fromId, msg) {
         const p = peers.get(fromId);
         if (p) { p.name = msg.name; broadcastPeers(); }
         break;
+      case 'fenjing-shot-lock':
+        fenjingNsp.emit('fenjing:shot-locked', { shotId: msg.shotId, shotNum: msg.shotNum, user: msg.user || '未知' });
+        broadcastToPeers(msg, fromId);
+        break;
+      case 'fenjing-shot-unlock':
+        fenjingNsp.emit('fenjing:shot-unlocked', { shotId: msg.shotId });
+        broadcastToPeers(msg, fromId);
+        break;
       case 'fenjing-sync':
         if (msg.state) {
           fenjingState = msg.state;
           fenjingNsp.emit('fenjing:state-sync', fenjingState);
           saveFenjingState(fenjingState);
+          // 同步项目列表
+          if (msg.projectMeta) {
+            fenjingProjectMeta = msg.projectMeta;
+            saveFenjingProjectsMeta(fenjingProjectMeta);
+            // 同步每个项目的数据
+            if (msg.projectMeta.projects) {
+              msg.projectMeta.projects.forEach(p => {
+                const data = getFenjingProjectData(p.id);
+                if (!data) {
+                  saveFenjingProjectData(p.id, { projectName: p.name || '未命名项目', scenes: [], shots: [] });
+                }
+              });
+            }
+            broadcastFenjingProjectsSync();
+          }
           broadcastToPeers(msg, fromId);
         }
         break;
@@ -1701,33 +1764,135 @@ function broadcastPeers() {
 
 // ─── 分镜工具 namespace ────────────────────────────────────
 const fenjingNsp = io.of('/fenjing');
+// 当前活动的分镜状态（向后兼容）
 let fenjingState = loadFenjingState() || { projectName: '未命名项目', scenes: [], shots: [] };
+// 多项目支持：元数据（项目列表）和每个项目的数据存储
+let fenjingProjectMeta = loadFenjingProjectsMeta() || { projects: [], activeId: '' };
+
+function getFenjingProjectData(projId) {
+  const f = path.join(DATA_DIR, 'fenjing-p-' + projId + '.json');
+  return loadJSON(f, null);
+}
+function saveFenjingProjectData(projId, data) {
+  const f = path.join(DATA_DIR, 'fenjing-p-' + projId + '.json');
+  saveJSON(f, data);
+}
+
+function broadcastFenjingProjectsSync() {
+  const meta = fenjingProjectMeta;
+  const projects = {};
+  (meta.projects || []).forEach(p => {
+    const data = getFenjingProjectData(p.id);
+    if (data) projects[p.id] = data;
+  });
+  fenjingNsp.emit('fenjing:projects-sync', { projects: meta.projects, activeId: meta.activeId, data: projects, currentState: fenjingState });
+}
+
+// 保存当前状态到项目数据 + 持久化
+function saveCurrentFenjingState() {
+  saveFenjingState(fenjingState);
+  if (fenjingProjectMeta.activeId) {
+    saveFenjingProjectData(fenjingProjectMeta.activeId, fenjingState);
+  }
+}
 
 fenjingNsp.on('connection', (socket) => {
-  console.log(`[fenjing连接] ${socket.id}`);
+  // 从查询参数获取用户名（SPA连接时传入）
+  const userName = socket.handshake.query.user || '';
+  socket.userName = decodeURIComponent(userName) || '未知用户';
+  console.log(`[fenjing连接] ${socket.id} 用户: ${socket.userName}`);
+  // 发送全量项目同步
+  broadcastFenjingProjectsSync();
+  // 向后兼容：也发送当前状态
   socket.emit('fenjing:state-sync', fenjingState);
+
+  // ── 镜头更新 ──
   socket.on('fenjing:shots-update', (shots) => {
     if (!Array.isArray(shots) || shots.length > 10000) return;
     fenjingState.shots = shots;
     socket.broadcast.emit('fenjing:shots-update', shots);
-    saveFenjingState(fenjingState);
-    broadcastToPeers({ type: 'fenjing-sync', state: fenjingState }, null);
+    saveCurrentFenjingState();
+    broadcastFenjingProjectsSync();
+    broadcastToPeers({ type: 'fenjing-sync', state: fenjingState, projectMeta: fenjingProjectMeta }, null);
   });
+
+  // ── 场景更新 ──
   socket.on('fenjing:scenes-update', (scenes) => {
     if (!Array.isArray(scenes) || scenes.length > 1000) return;
     fenjingState.scenes = scenes;
     socket.broadcast.emit('fenjing:scenes-update', scenes);
-    saveFenjingState(fenjingState);
-    broadcastToPeers({ type: 'fenjing-sync', state: fenjingState }, null);
+    saveCurrentFenjingState();
+    broadcastFenjingProjectsSync();
+    broadcastToPeers({ type: 'fenjing-sync', state: fenjingState, projectMeta: fenjingProjectMeta }, null);
   });
+
+  // ── 项目重命名 ──
   socket.on('fenjing:project-rename', (name) => {
     if (!validateString(name, 100)) return;
     fenjingState.projectName = name;
+    // 在项目列表中也更新
+    const target = fenjingProjectMeta.projects.find(p => p.id === fenjingProjectMeta.activeId);
+    if (target) target.name = name;
+    saveFenjingProjectsMeta(fenjingProjectMeta);
     socket.broadcast.emit('fenjing:project-rename', name);
-    saveFenjingState(fenjingState);
-    broadcastToPeers({ type: 'fenjing-sync', state: fenjingState }, null);
+    saveCurrentFenjingState();
+    broadcastFenjingProjectsSync();
+    broadcastToPeers({ type: 'fenjing-sync', state: fenjingState, projectMeta: fenjingProjectMeta }, null);
   });
-  // 加载项目分镜数据
+
+  // ── 项目创建（来自SPA的 localStorage 项目同步到服务器） ──
+  socket.on('fenjing:project-create', ({ id, name }) => {
+    if (!id || !validateString(name, 100)) return;
+    // 检查是否已存在
+    if (fenjingProjectMeta.projects.find(p => p.id === id)) return;
+    const newProj = { id, name: name || '未命名项目', createdAt: Date.now() };
+    fenjingProjectMeta.projects.push(newProj);
+    fenjingProjectMeta.activeId = id;
+    saveFenjingProjectsMeta(fenjingProjectMeta);
+    // 创建项目数据（空状态）
+    saveFenjingProjectData(id, { projectName: name || '未命名项目', scenes: [], shots: [] });
+    // 更新当前状态
+    fenjingState = { projectName: name || '未命名项目', scenes: [], shots: [] };
+    saveFenjingState(fenjingState);
+    // 广播
+    broadcastFenjingProjectsSync();
+    broadcastToPeers({ type: 'fenjing-sync', state: fenjingState, projectMeta: fenjingProjectMeta }, null);
+    socket.broadcast.emit('fenjing:project-created', { id, name });
+  });
+
+  // ── 切换活动项目 ──
+  socket.on('fenjing:project-switch', ({ id }) => {
+    if (!fenjingProjectMeta.projects.find(p => p.id === id)) return;
+    fenjingProjectMeta.activeId = id;
+    saveFenjingProjectsMeta(fenjingProjectMeta);
+    // 加载项目数据
+    const data = getFenjingProjectData(id);
+    if (data) {
+      fenjingState = { projectName: data.projectName || '未命名项目', scenes: data.scenes || [], shots: data.shots || [] };
+    }
+    saveFenjingState(fenjingState);
+    // 通知所有客户端切换到该项目
+    fenjingNsp.emit('fenjing:state-sync', fenjingState);
+    broadcastFenjingProjectsSync();
+    broadcastToPeers({ type: 'fenjing-sync', state: fenjingState, projectMeta: fenjingProjectMeta }, null);
+  });
+
+  // ── 镜头编辑锁（防冲突） ──
+  socket.on('fenjing:shot-lock', ({ shotId, shotNum }) => {
+    socket.broadcast.emit('fenjing:shot-locked', { shotId, shotNum, user: socket.userName || '未知用户' });
+    broadcastToPeers({ type: 'fenjing-shot-lock', shotId, shotNum, user: socket.userName || '未知用户' }, null);
+  });
+  socket.on('fenjing:shot-unlock', ({ shotId }) => {
+    socket.broadcast.emit('fenjing:shot-unlocked', { shotId });
+    broadcastToPeers({ type: 'fenjing-shot-unlock', shotId }, null);
+  });
+
+  // ── 全量项目列表同步（客户端请求） ──
+  socket.on('fenjing:request-projects-sync', () => {
+    broadcastFenjingProjectsSync();
+  });
+
+  // 加载项目分镜数据（从主app项目系统）
   socket.on('fenjing:load-item', ({ itemId, projectId }) => {
     let targetItem = null;
     let targetProject = null;
@@ -1744,7 +1909,9 @@ fenjingNsp.on('connection', (socket) => {
       fenjingState = { projectName: '未命名项目', scenes: [], shots: [] };
     }
     fenjingNsp.emit('fenjing:state-sync', fenjingState);
+    broadcastFenjingProjectsSync();
   });
+
   // 保存分镜数据到项目
   socket.on('fenjing:save-item', ({ itemId, projectId }) => {
     let targetProject = null;

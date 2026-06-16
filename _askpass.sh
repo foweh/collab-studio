@@ -1,0 +1,1 @@
+echo Abdurahman666%
