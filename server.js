@@ -858,7 +858,8 @@ io.on('connection', (socket) => {
     if (data.name !== undefined) p.name = data.name;
     if (data.data !== undefined) p.data = data.data;
     p.updatedAt = Date.now();
-    socket.emit('project-updated', { id: p.id, name: p.name, data: p.data, updatedAt: p.updatedAt });
+    // 广播给所有其他在线用户（发送者本地已更新）
+    socket.broadcast.emit('project-updated', { id: p.id, name: p.name, data: p.data, updatedAt: p.updatedAt });
     addLog(socket.id, socket.userName || SERVER_NAME, 'updated', p.type, p.name);
     // 记录操作历史（用于撤回）
     pushProjectOp(p.id, socket.userName, 'update', before, JSON.parse(JSON.stringify(p.data || {})));

@@ -1192,10 +1192,15 @@ function saveData() {
   if (!currentProject) return;
   currentProject.data = { nodes: nodes.map(n => ({...n})), edges: edges.map(e => ({...e})) };
   socket.emit('project-update', { id: currentProject.id, data: currentProject.data });
+  // 实时同步给其他用户
+  socket.emit('realtime-event', {
+    module: 'mindmap', event: 'mindmap-updated',
+    payload: { id: currentProject.id, data: currentProject.data },
+  });
 }
 
 // ─── 实时同步 ────────────────────────────────────────────
-socket.on('project-updated', (data) => {
+socket.on('mindmap-updated', (data) => {
   if (currentProject && currentProject.id === data.id && data.data) {
     currentProject.data = data.data;
     nodes = JSON.parse(JSON.stringify(data.data.nodes || []));
