@@ -1727,15 +1727,34 @@ function handleBridgeMessage(fromId, msg) {
   try {
     switch (msg.type) {
       case 'projects-sync':
+        // 找出新项目（本服务器没有的）
+        const newProjects = [];
+        (msg.projects || []).forEach(rp => {
+          if (!projects.find(x => x.id === rp.id)) newProjects.push(rp);
+        });
         projectSvc.mergeProjects(msg.projects);
-        broadcastToBrowsers({ type: 'projects-update', projects: projects.map(x => ({...x})) });
+        // 逐个通知有权限的用户（新项目用 project-created，已有项目不做全量广播）
+        newProjects.forEach(np => {
+          for (const [sid, s] of io.sockets.sockets) {
+            if (!s.userName) continue;
+            const filtered = getFilteredProjects(s.userName, [np]);
+            if (filtered.length) s.emit('project-created', { ...np });
+          }
+        });
         broadcastToPeers(msg, fromId);
         break;
       case 'project-transfer':
         const newOnes = [];
         msg.projects.forEach(p => { if (!projects.find(x => x.id === p.id)) { projects.push({...p}); newOnes.push(p); } });
+        // 逐个通知有权限的用户
+        newOnes.forEach(np => {
+          for (const [sid, s] of io.sockets.sockets) {
+            if (!s.userName) continue;
+            const filtered = getFilteredProjects(s.userName, [np]);
+            if (filtered.length) s.emit('project-created', { ...np });
+          }
+        });
         broadcastToBrowsers({ type: 'projects-received', projects: newOnes, from: msg.fromName });
-        broadcastToBrowsers({ type: 'projects-update' });
         broadcastToPeers(msg, fromId);
         break;
       case 'realtime':
