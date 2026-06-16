@@ -379,8 +379,21 @@ function renderCreateGroupUsers(users) {
     el.innerHTML = '<div style="padding:12px;text-align:center;color:var(--text-dim);font-size:13px">没有可添加的用户</div>';
     return;
   }
-  el.innerHTML = users.map(function(u) {
-    if (u.name === myName) return ''; // exclude self
+  // 排除自己和已在群中的成员
+  var modal = document.getElementById('create-group-modal');
+  var targetGroupId = modal ? modal.dataset.groupTarget : null;
+  var targetGroup = targetGroupId ? myGroups.find(function(g) { return g.id === targetGroupId; }) : null;
+  var existingMembers = targetGroup ? (targetGroup.members || []) : [];
+  var others = users.filter(function(u) {
+    if (u.name === myName) return false;
+    if (existingMembers.indexOf(u.name) >= 0) return false;
+    return true;
+  });
+  if (others.length === 0) {
+    el.innerHTML = '<div style="padding:12px;text-align:center;color:var(--text-dim);font-size:13px">没有其他可添加的用户</div>';
+    return;
+  }
+  el.innerHTML = others.map(function(u) {
     var initial = u.name.charAt(0).toUpperCase();
     var colorIdx = u.name.length % AVATAR_COLORS.length;
     var bgColor = AVATAR_COLORS[colorIdx];
