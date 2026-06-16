@@ -1054,6 +1054,7 @@ socket.on('bridge-message', (msg) => {
       updatePeersUI();
       break;
     case 'projects-update':
+      if (msg.projects) { projects = msg.projects; renderProjects(); }
       break;
     case 'projects-received':
       showReceiveModal(msg);
@@ -1097,6 +1098,27 @@ socket.on('project-purged', (id) => {
   const idx = projects.findIndex(p => p.id === id);
   if (idx >= 0) projects.splice(idx, 1);
   renderProjects();
+});
+
+socket.on('project-item-added', (data) => {
+  const p = projects.find(x => x.id === data.projectId);
+  if (p) {
+    if (!p.data.items) p.data.items = [];
+    const idx = p.data.items.findIndex(it => it.id === data.item.id);
+    if (idx >= 0) p.data.items[idx] = data.item;
+    else p.data.items.push(data.item);
+    p.updatedAt = Date.now();
+    renderProjects();
+  }
+});
+
+socket.on('project-item-removed', (data) => {
+  const p = projects.find(x => x.id === data.projectId);
+  if (p && p.data && p.data.items) {
+    p.data.items = p.data.items.filter(it => it.id !== data.itemId);
+    p.updatedAt = Date.now();
+    renderProjects();
+  }
 });
 
 socket.on('project-update-error', (msg) => {

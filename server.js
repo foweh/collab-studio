@@ -774,6 +774,7 @@ io.on('connection', (socket) => {
     p.updatedAt = Date.now();
     projectSvc.saveProjects();
     io.emit('project-item-added', { projectId, item });
+    broadcastToPeers({ type: 'projects-sync', projects: projects.map(x => ({...x})) }, null);
     addLog(socket.id, socket.userName, 'added item', p.type, p.name + ' → ' + item.name);
   });
   socket.on('project-remove-item', ({ projectId, itemId }) => {
@@ -784,6 +785,7 @@ io.on('connection', (socket) => {
     p.updatedAt = Date.now();
     projectSvc.saveProjects();
     io.emit('project-item-removed', { projectId, itemId });
+    broadcastToPeers({ type: 'projects-sync', projects: projects.map(x => ({...x})) }, null);
     addLog(socket.id, socket.userName, 'removed item', p.type, p.name);
   });
   socket.on('project-create-batch', (data) => {
@@ -820,6 +822,7 @@ io.on('connection', (socket) => {
     p.updatedAt = Date.now();
     projectSvc.saveProjects();
     io.emit('project-updated', { id: p.id, name: p.name, data: p.data, updatedAt: p.updatedAt });
+    broadcastToPeers({ type: 'projects-sync', projects: projects.map(x => ({...x})) }, null);
     addLog(socket.id, socket.userName, 'renamed', p.type, name);
   });
 
@@ -839,6 +842,7 @@ io.on('connection', (socket) => {
     p.updatedAt = Date.now();
     projectSvc.saveProjects();
     io.emit('project-item-added', { projectId, item });
+    broadcastToPeers({ type: 'projects-sync', projects: projects.map(x => ({...x})) }, null);
     addLog(socket.id, socket.userName, 'renamed item', p.type, name);
   });
 
@@ -1624,7 +1628,7 @@ function handleBridgeMessage(fromId, msg) {
     switch (msg.type) {
       case 'projects-sync':
         projectSvc.mergeProjects(msg.projects);
-        broadcastToBrowsers({ type: 'projects-update' });
+        broadcastToBrowsers({ type: 'projects-update', projects: projects.map(x => ({...x})) });
         broadcastToPeers(msg, fromId);
         break;
       case 'project-transfer':
