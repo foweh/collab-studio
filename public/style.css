@@ -1452,6 +1452,63 @@ body {
 .admin-section { margin-bottom: 16px; }
 .admin-section h3 { font-size: 14px; font-weight: 600; color: var(--text); margin-bottom: 8px; display: flex; align-items: center; gap: 6px; }
 .admin-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+
+/* ─── 群聊 ─── */
+#group-list .group-card {
+  display: flex; align-items: center; gap: 10px;
+  padding: 10px 12px; border-radius: 8px; cursor: pointer;
+  transition: background 0.15s; border: none; background: none; width: 100%;
+  text-align: left; color: var(--text); font-family: inherit;
+}
+#group-list .group-card:hover { background: var(--surface2); }
+#group-list .group-card .group-icon { font-size: 24px; flex-shrink: 0; }
+#group-list .group-card .group-info { flex: 1; min-width: 0; }
+#group-list .group-card .group-name { font-size: 13px; font-weight: 600; }
+#group-list .group-card .group-meta { font-size: 11px; color: var(--text-dim); }
+
+/* 创建群聊 - 用户列表项 */
+.create-user-item {
+  display: flex; align-items: center; gap: 8px;
+  padding: 6px 8px; border-radius: 6px; cursor: pointer;
+}
+.create-user-item:hover { background: var(--surface2); }
+.create-user-item input[type="checkbox"] { width: 16px; height: 16px; cursor: pointer; accent-color: var(--accent); }
+.create-user-item .create-user-avatar {
+  width: 28px; height: 28px; border-radius: 50%; flex-shrink: 0;
+  background-size: cover; background-position: center;
+  display: flex; align-items: center; justify-content: center;
+  color: #fff; font-size: 12px; font-weight: 700;
+}
+.create-user-item .create-user-name { font-size: 13px; flex: 1; }
+
+/* 群详情 - 成员列表 */
+.group-member-item {
+  display: flex; align-items: center; gap: 8px;
+  padding: 6px 8px; border-radius: 6px;
+}
+.group-member-item:hover { background: var(--surface2); }
+.group-member-item .gm-avatar {
+  width: 28px; height: 28px; border-radius: 50%; flex-shrink: 0;
+  background-size: cover; background-position: center;
+  display: flex; align-items: center; justify-content: center;
+  color: #fff; font-size: 12px; font-weight: 700;
+}
+.group-member-item .gm-name { font-size: 13px; flex: 1; }
+.group-member-item .gm-owner-badge { font-size: 11px; color: var(--accent); font-weight: 600; }
+.group-member-item .gm-kick-btn {
+  padding: 2px 8px; border: none; border-radius: 4px;
+  background: #ef4444; color: #fff; font-size: 11px; cursor: pointer;
+}
+.group-member-item .gm-kick-btn:hover { opacity: 0.85; }
+
+/* 群聊消息 - 发送者名称 */
+.chat-msg.group { align-items: flex-start; }
+.chat-msg.group.me { align-items: flex-end; }
+.chat-msg.group .chat-msg-body { display: flex; flex-direction: column; max-width: 70%; }
+.chat-msg.group .chat-msg-name { font-size: 11px; color: var(--text-dim); margin-bottom: 2px; margin-left: 4px; }
+.chat-msg.group .chat-msg-body .chat-bubble { max-width: 100%; }
+.chat-msg.group.me .chat-msg-body { align-items: flex-end; }
+.chat-msg.group.me .chat-msg-name { display: none; }
 .admin-table th { text-align: left; padding: 6px 8px; color: var(--text-dim); font-size: 12px; font-weight: 500; border-bottom: 1px solid var(--border); }
 .admin-table td { padding: 6px 8px; border-bottom: 1px solid var(--border); }
 .admin-table tr:hover td { background: var(--surface2); }

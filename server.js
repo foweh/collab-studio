@@ -26,6 +26,8 @@ const PWD_RESETS_FILE = path.join(DATA_DIR, 'password-resets.json');
 const MSG_PERM_FILE = path.join(DATA_DIR, 'message-permissions.json');
 const ANNOTATIONS_FILE = path.join(DATA_DIR, 'annotations.json');
 const LOG_FILE = path.join(DATA_DIR, 'operation-log.json');
+const GROUPS_FILE = path.join(DATA_DIR, 'groups.json');
+const GROUP_CHAT_FILE = path.join(DATA_DIR, 'group-chat-history.json');
 
 // ─── 配置 & CLI ─────────────────────────────────────────
 // 读取管理员配置文件
@@ -93,6 +95,36 @@ function saveMsgPermissions() { saveJSON(MSG_PERM_FILE, messagePermissions); }
 // ─── 分镜状态 ──────────────────────────────────────────
 function loadFenjingState() { return loadJSON(FENJING_FILE, null); }
 function saveFenjingState(state) { saveJSON(FENJING_FILE, state); }
+
+// ─── 群聊数据 ────────────────────────────────────────────
+let groups = loadJSON(GROUPS_FILE, []);
+let groupChatHistory = loadJSON(GROUP_CHAT_FILE, {});
+let groupInviteRequests = []; // { id, from, candidate, groupId }
+let groupInviteReqId = 0;
+
+function saveGroups() { saveJSON(GROUPS_FILE, groups); }
+function saveGroupChat() { saveJSON(GROUP_CHAT_FILE, groupChatHistory); }
+
+function getGroup(id) { return groups.find(g => g.id === id && !g.isDissolved); }
+
+function addGroupChatMsg(groupId, from, text) {
+  if (!groupChatHistory[groupId]) groupChatHistory[groupId] = [];
+  const msg = { from, text, time: Date.now() };
+  groupChatHistory[groupId].push(msg);
+  if (groupChatHistory[groupId].length > 500) groupChatHistory[groupId].splice(0, 100);
+  saveGroupChat();
+  return msg;
+}
+
+function broadcastToGroup(io, groupId, event, data) {
+  const g = getGroup(groupId);
+  if (!g) return;
+  for (const [sid, u] of onlineUsers) {
+    if (g.members.includes(u.name)) {
+      io.to(sid).emit(event, data);
+    }
+  }
+}
 
 // ─── 批注存储 ────────────────────────────────────────────
 let annotations = loadJSON(ANNOTATIONS_FILE, []);
@@ -1419,6 +1451,165 @@ io.on('connection', (socket) => {
     addLog(socket.id, socket.userName, 'redo', p.type, p.name);
   });
 
+
+  // ── 群聊 ──────────────────────────────────────────────
+  socket.on('get-all-users', () => {
+    const list = Object.entries(users).map(([name, u]) => ({
+      name, isAdmin: u.isAdmin, isBanned: u.isBanned,
+      role: u.isAdmin ? 'editor' : (u.role || 'commenter'),
+      avatar: u.avatar || '',
+      online: [...onlineUsers.values()].some(o => o.name === name),
+    })).filter(u => !u.isBanned);
+    socket.emit('all-users-list', list);
+  });
+
+  socket.on('group-create', ({ name, members }) => {
+    if (!socket.userName) return;
+    if (!name || !name.trim() || name.length > 50) return;
+    if (!Array.isArray(members) || members.length === 0) return;
+    const gid = 'g_' + uuid().slice(0, 10);
+    const g = {
+      id: gid, name: name.trim(),
+      owner: socket.userName,
+      members: [socket.userName, ...members.filter(m => m !== socket.userName && users[m])],
+      createdAt: Date.now(), isDissolved: false,
+    };
+    groups.push(g);
+    saveGroups();
+    addLog(socket.id, socket.userName, 'created group', 'group', g.name);
+    // 通知所有群成员
+    broadcastToGroup(io, gid, 'group-created', g);
+    socket.emit('group-created', g);
+  });
+
+  socket.on('group-list', () => {
+    if (!socket.userName) return;
+    const myGroups = groups.filter(g => !g.isDissolved && g.members.includes(socket.userName));
+    socket.emit('group-list-result', myGroups);
+  });
+
+  socket.on('group-get-members', ({ groupId }) => {
+    const g = getGroup(groupId);
+    if (!g || !g.members.includes(socket.userName)) return;
+    socket.emit('group-members-result', { groupId, members: g.members, owner: g.owner });
+  });
+
+  socket.on('group-add-member', ({ groupId, members }) => {
+    const g = getGroup(groupId);
+    if (!g) return;
+    if (g.owner !== socket.userName) { socket.emit('group-error', '只有群主可以添加成员'); return; }
+    if (!Array.isArray(members)) return;
+    let added = [];
+    members.forEach(m => {
+      if (users[m] && !g.members.includes(m)) {
+        g.members.push(m);
+        added.push(m);
+      }
+    });
+    if (added.length === 0) return;
+    saveGroups();
+    addLog(socket.id, socket.userName, 'added group members', 'group', g.name + ': ' + added.join(','));
+    // 通知老成员
+    broadcastToGroup(io, groupId, 'group-updated', { groupId, type: 'member-added', members: added, group: g });
+    // 通知新成员
+    for (const [sid, u] of onlineUsers) {
+      if (added.includes(u.name)) io.to(sid).emit('group-created', g);
+    }
+  });
+
+  socket.on('group-remove-member', ({ groupId, member }) => {
+    const g = getGroup(groupId);
+    if (!g || !member) return;
+    if (g.owner !== socket.userName) { socket.emit('group-error', '只有群主可以移除成员'); return; }
+    if (member === g.owner) { socket.emit('group-error', '不能移除群主'); return; }
+    if (!g.members.includes(member)) return;
+    g.members = g.members.filter(m => m !== member);
+    saveGroups();
+    addLog(socket.id, socket.userName, 'removed group member', 'group', g.name + ': ' + member);
+    // 通知所有成员（包括被踢的，如果在线）
+    broadcastToGroup(io, groupId, 'group-updated', { groupId, type: 'member-removed', member, group: g });
+    for (const [sid, u] of onlineUsers) {
+      if (u.name === member) io.to(sid).emit('group-member-removed', { groupId, group: g });
+    }
+  });
+
+  socket.on('group-invite-request', ({ groupId, candidate }) => {
+    const g = getGroup(groupId);
+    if (!g || !candidate || !users[candidate]) return;
+    if (!g.members.includes(socket.userName)) return;
+    if (g.members.includes(candidate)) { socket.emit('group-error', '该用户已在群中'); return; }
+    if (g.owner === socket.userName) {
+      // 群主自己邀请，直接添加
+      g.members.push(candidate);
+      saveGroups();
+      broadcastToGroup(io, groupId, 'group-updated', { groupId, type: 'member-added', members: [candidate], group: g });
+      for (const [sid, u] of onlineUsers) {
+        if (u.name === candidate) io.to(sid).emit('group-created', g);
+      }
+      return;
+    }
+    // 普通成员申请 → 发给群主审批
+    const req = { id: ++groupInviteReqId, from: socket.userName, candidate, groupId };
+    groupInviteRequests.push(req);
+    for (const [sid, u] of onlineUsers) {
+      if (u.name === g.owner) io.to(sid).emit('group-invite-request', req);
+    }
+    socket.emit('group-invite-sent', '邀请申请已发送给群主');
+  });
+
+  socket.on('group-invite-approve', ({ requestId, approve }) => {
+    const idx = groupInviteRequests.findIndex(r => r.id === requestId);
+    if (idx === -1) return;
+    const req = groupInviteRequests[idx];
+    groupInviteRequests.splice(idx, 1);
+    const g = getGroup(req.groupId);
+    if (!g) return;
+    if (g.owner !== socket.userName) return;
+    if (!approve) {
+      for (const [sid, u] of onlineUsers) {
+        if (u.name === req.from) io.to(sid).emit('group-invite-result', { approved: false, groupId: req.groupId, candidate: req.candidate });
+      }
+      return;
+    }
+    if (!g.members.includes(req.candidate) && users[req.candidate]) {
+      g.members.push(req.candidate);
+      saveGroups();
+      broadcastToGroup(io, req.groupId, 'group-updated', { groupId: req.groupId, type: 'member-added', members: [req.candidate], group: g });
+      for (const [sid, u] of onlineUsers) {
+        if (u.name === req.candidate) io.to(sid).emit('group-created', g);
+      }
+      for (const [sid, u] of onlineUsers) {
+        if (u.name === req.from) io.to(sid).emit('group-invite-result', { approved: true, groupId: req.groupId, candidate: req.candidate });
+      }
+    }
+  });
+
+  socket.on('group-dissolve', ({ groupId }) => {
+    const g = getGroup(groupId);
+    if (!g) return;
+    if (g.owner !== socket.userName) { socket.emit('group-error', '只有群主可以解散群'); return; }
+    g.isDissolved = true;
+    saveGroups();
+    addLog(socket.id, socket.userName, 'dissolved group', 'group', g.name);
+    broadcastToGroup(io, groupId, 'group-dissolved', { groupId, group: g });
+  });
+
+  socket.on('group-send', ({ groupId, text }) => {
+    const g = getGroup(groupId);
+    if (!g || !socket.userName) return;
+    if (!g.members.includes(socket.userName)) return;
+    if (!text || !text.trim() || text.length > 500) return;
+    if (!checkRateLimit('groupMsg:' + socket.userName, 10, 60000)) return;
+    const msg = addGroupChatMsg(groupId, socket.userName, text.trim());
+    broadcastToGroup(io, groupId, 'group-message', { groupId, from: socket.userName, text: msg.text, time: msg.time });
+  });
+
+  socket.on('group-chat-history', ({ groupId }) => {
+    const g = getGroup(groupId);
+    if (!g || !socket.userName || !g.members.includes(socket.userName)) return;
+    const history = groupChatHistory[groupId] || [];
+    socket.emit('group-chat-history-result', { groupId, messages: history });
+  });
   socket.on('disconnect', () => {
     if (socket.userName) auth.updateLastSeen(socket.userName);
     onlineUsers.delete(socket.id);

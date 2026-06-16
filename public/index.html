@@ -282,6 +282,17 @@
               </div>
             </div>
 
+            <!-- 群聊 -->
+            <div class="msg-card" id="group-section">
+              <div class="msg-card-header">
+                <span>👥 群聊</span>
+                <button class="toolbar-btn" id="create-group-btn" style="font-size:12px;padding:2px 10px;margin-left:auto">➕ 创建群聊</button>
+              </div>
+              <div id="group-list" class="msg-card-body" style="display:flex;flex-direction:column;gap:4px">
+                <div class="status-none" style="padding:12px 0;text-align:center;color:var(--text-dim);font-size:13px" id="group-list-empty">暂无群聊，点击上方创建</div>
+              </div>
+            </div>
+
             <!-- 批注 -->
             <div class="msg-card">
               <div class="msg-card-header">
@@ -535,5 +546,41 @@
   <script src="/mindmap.js"></script>
   <script src="/story-editor.js"></script>
   <script src="/devices.js"></script>
+
+  <!-- ─── 创建群聊弹窗 ─── -->
+  <div id="create-group-modal" class="modal-overlay" style="display:none">
+    <div class="create-card" style="max-width:420px">
+      <div class="create-header">
+        <span class="create-icon">💬</span>
+        <span class="create-title">创建群聊</span>
+      </div>
+      <div class="create-body">
+        <input type="text" id="create-group-name" class="create-input" placeholder="输入群名称..." maxlength="50" style="width:100%;padding:8px 12px;box-sizing:border-box;margin-bottom:10px">
+        <div style="font-size:12px;color:var(--text-dim);margin-bottom:6px">选择成员：</div>
+        <div id="create-group-user-list" style="max-height:280px;overflow-y:auto;border:1px solid var(--border);border-radius:8px;padding:4px"></div>
+        <div class="create-actions" style="margin-top:12px">
+          <button class="create-btn cancel" id="create-group-cancel">取消</button>
+          <button class="create-btn confirm" id="create-group-confirm" disabled>创建（0人）</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ─── 群详情弹窗 ─── -->
+  <div id="group-detail-modal" class="modal-overlay" style="display:none">
+    <div class="create-card" style="max-width:400px">
+      <div class="create-header">
+        <span class="create-icon">💬</span>
+        <span class="create-title" id="group-detail-title">群详情</span>
+      </div>
+      <div class="create-body">
+        <div id="group-detail-name" style="font-size:14px;font-weight:600;margin-bottom:8px"></div>
+        <div style="font-size:12px;color:var(--text-dim);margin-bottom:6px">群成员：<span id="group-detail-member-count">0</span>人</div>
+        <div id="group-detail-member-list" style="max-height:260px;overflow-y:auto;border:1px solid var(--border);border-radius:8px;padding:4px;margin-bottom:10px"></div>
+        <div id="group-detail-actions" style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:8px"></div>
+        <button class="create-btn cancel" id="group-detail-close" style="width:100%">关闭</button>
+      </div>
+    </div>
+  </div>
 </body>
 </html>

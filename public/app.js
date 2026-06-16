@@ -185,6 +185,22 @@ function chatAvatarHtml(userName) {
 }
 
 // 渲染单条聊天气泡
+
+// 渲染群聊消息（显示发送者名称）
+function renderGroupMsgHtml(from, text, time, isMe, merge) {
+  var mc = merge ? ' merge' : '';
+  var side = isMe ? ' me' : '';
+  var nameLabel = isMe ? '' : '<div class="chat-msg-name">' + esc(from) + '</div>';
+  return '<div class="chat-msg group' + side + mc + '">' +
+    chatAvatarHtml(from) +
+    '<div class="chat-msg-body">' +
+      nameLabel +
+      '<div class="chat-bubble">' + esc(text) + '</div>' +
+    '</div>' +
+    '<span class="chat-time">' + new Date(time).toLocaleTimeString() + '</span>' +
+  '</div>';
+}
+
 function renderMsgHtml(from, text, time, isMe, merge) {
   var mc = merge ? ' merge' : '';
   var side = isMe ? ' me' : '';
@@ -262,6 +278,240 @@ function sendChat() {
   }
 }
 
+
+// ─── 群聊 UI ──────────────────────────────────────────
+
+// 渲染群列表
+function renderGroupList() {
+  var el = document.getElementById('group-list');
+  if (!el) return;
+  if (!myGroups || myGroups.length === 0) {
+    el.innerHTML = '<div class="status-none" style="padding:12px 0;text-align:center;color:var(--text-dim);font-size:13px" id="group-list-empty">暂无群聊，点击上方创建</div>';
+    return;
+  }
+  el.innerHTML = myGroups.map(function(g) {
+    var cnt = g.members ? g.members.length : 0;
+    return '<button class="group-card" data-group-id="' + g.id + '">' +
+      '<span class="group-icon">💬</span>' +
+      '<div class="group-info">' +
+        '<div class="group-name">' + esc(g.name) + '</div>' +
+        '<div class="group-meta">' + cnt + '人 · ' + (g.owner === myName ? '群主' : ('群主: ' + esc(g.owner))) + '</div>' +
+      '</div>' +
+    '</button>';
+  }).join('');
+  // 绑定点击事件
+  el.querySelectorAll('.group-card').forEach(function(btn) {
+    btn.addEventListener('click', function() {
+      openGroupChat(this.dataset.groupId);
+    });
+  });
+}
+
+// 打开群聊天窗口
+function openGroupChat(groupId) {
+  var g = myGroups.find(function(x) { return x.id === groupId; });
+  if (!g) return;
+  var modal = document.getElementById('chat-modal');
+  var nameEl = document.getElementById('chat-with');
+  var msgsEl = document.getElementById('chat-msgs');
+  var inputEl = document.getElementById('chat-input');
+  if (!modal || !nameEl || !msgsEl || !inputEl) return;
+  currentGroupId = groupId;
+  modal.dataset.groupId = groupId;
+  delete modal.dataset.chatWith;
+  nameEl.innerHTML = '# ' + esc(g.name) + ' <span style="font-weight:400;font-size:12px;color:var(--text-dim)">(' + (g.members ? g.members.length : 0) + '人)</span> <span class="group-chat-detail-btn" style="font-weight:400;font-size:12px;color:var(--accent);cursor:pointer;margin-left:4px" title="群详情">详情</span>';
+  // 绑定详情按钮
+  setTimeout(function() {
+    var detailBtn = document.querySelector('.group-chat-detail-btn');
+    if (detailBtn) detailBtn.addEventListener('click', function() { openGroupDetail(groupId); });
+  }, 50);
+  msgsEl.innerHTML = '';
+  modal.style.display = 'block';
+  socket.emit('group-chat-history', { groupId: groupId });
+  setTimeout(function() { inputEl.focus(); }, 100);
+}
+
+// 关闭聊天窗口（增强：清除群聊上下文）
+var origCloseChat = document.getElementById ? null : null;
+// 用事件监听方式
+document.addEventListener('DOMContentLoaded', function() {
+  var closeBtn = document.getElementById('chat-modal-close');
+  if (closeBtn) {
+    closeBtn.addEventListener('click', function() {
+      document.getElementById('chat-modal').style.display = 'none';
+      currentGroupId = null;
+    });
+  }
+});
+
+// 发送群消息
+function sendGroupChat() {
+  var modal = document.getElementById('chat-modal');
+  var inputEl = document.getElementById('chat-input');
+  if (!modal || !inputEl) return;
+  var groupId = modal.dataset.groupId;
+  if (!groupId) return; // not group mode, fallback to private
+  var text = inputEl.value.trim();
+  if (!text) return;
+  socket.emit('group-send', { groupId: groupId, text: text });
+  inputEl.value = '';
+  // 本地立即显示
+  var msgsEl = document.getElementById('chat-msgs');
+  if (msgsEl) {
+    var lastMsg = msgsEl.lastElementChild;
+    var lastMe = lastMsg && lastMsg.classList.contains('me') && lastMsg.classList.contains('group');
+    msgsEl.innerHTML += renderGroupMsgHtml(myName, text, Date.now(), true, lastMe);
+    msgsEl.scrollTop = msgsEl.scrollHeight;
+  }
+}
+
+// ─── 创建群聊 ──────────────────────────────────────────
+function openCreateGroup() {
+  socket.emit('get-all-users');
+  var modal = document.getElementById('create-group-modal');
+  if (modal) modal.style.display = 'flex';
+}
+
+function renderCreateGroupUsers(users) {
+  var el = document.getElementById('create-group-user-list');
+  if (!el) return;
+  if (!users || users.length === 0) {
+    el.innerHTML = '<div style="padding:12px;text-align:center;color:var(--text-dim);font-size:13px">没有可添加的用户</div>';
+    return;
+  }
+  el.innerHTML = users.map(function(u) {
+    if (u.name === myName) return ''; // exclude self
+    var initial = u.name.charAt(0).toUpperCase();
+    var colorIdx = u.name.length % AVATAR_COLORS.length;
+    var bgColor = AVATAR_COLORS[colorIdx];
+    var avatarStyle = u.avatar
+      ? 'background-image:url(/avatars/' + u.avatar + '?v=' + Date.now() + ');background-size:cover;background-position:center'
+      : 'background:' + bgColor;
+    return '<label class="create-user-item">' +
+      '<input type="checkbox" class="create-user-cb" value="' + esc(u.name) + '">' +
+      '<div class="create-user-avatar" style="' + avatarStyle + '">' + (u.avatar ? '' : initial) + '</div>' +
+      '<span class="create-user-name">' + esc(u.name) + '</span>' +
+    '</label>';
+  }).join('');
+}
+
+// 获取已选中的成员
+function getSelectedMembers() {
+  var cbs = document.querySelectorAll('#create-group-user-list .create-user-cb:checked');
+  return Array.from(cbs).map(function(cb) { return cb.value; });
+}
+
+function updateCreateBtn() {
+  var btn = document.getElementById('create-group-confirm');
+  var sel = getSelectedMembers();
+  if (btn) btn.textContent = '创建（' + sel.length + '人）';
+  if (btn) btn.disabled = sel.length === 0;
+}
+
+// ─── 群详情 ────────────────────────────────────────────
+function openGroupDetail(groupId) {
+  var g = myGroups.find(function(x) { return x.id === groupId; });
+  if (!g) return;
+  var modal = document.getElementById('group-detail-modal');
+  if (!modal) return;
+  document.getElementById('group-detail-title').textContent = '💬 ' + g.name;
+  document.getElementById('group-detail-name').textContent = '# ' + g.name;
+  document.getElementById('group-detail-member-count').textContent = g.members ? g.members.length : 0;
+
+  // 成员列表
+  var listEl = document.getElementById('group-detail-member-list');
+  var isOwner = g.owner === myName;
+  listEl.innerHTML = (g.members || []).map(function(m) {
+    var initial = m.charAt(0).toUpperCase();
+    var colorIdx = m.length % AVATAR_COLORS.length;
+    var bgColor = AVATAR_COLORS[colorIdx];
+    var av = avatarMap[m] || '';
+    var avatarStyle = av
+      ? 'background-image:url(/avatars/' + av + '?v=' + Date.now() + ');background-size:cover;background-position:center'
+      : 'background:' + bgColor;
+    var ownerBadge = m === g.owner ? '<span class="gm-owner-badge">群主</span>' : '';
+    var kickBtn = (isOwner && m !== g.owner)
+      ? '<button class="gm-kick-btn" data-group-id="' + g.id + '" data-member="' + esc(m) + '">踢出</button>'
+      : '';
+    return '<div class="group-member-item">' +
+      '<div class="gm-avatar" style="' + avatarStyle + '">' + (av ? '' : initial) + '</div>' +
+      '<span class="gm-name">' + esc(m) + '</span>' +
+      ownerBadge +
+      kickBtn +
+    '</div>';
+  }).join('');
+
+  // 绑定踢人按钮
+  listEl.querySelectorAll('.gm-kick-btn').forEach(function(btn) {
+    btn.addEventListener('click', function(e) {
+      e.stopPropagation();
+      if (confirm('确定将 ' + this.dataset.member + ' 移出群聊？')) {
+        socket.emit('group-remove-member', { groupId: this.dataset.groupId, member: this.dataset.member });
+      }
+    });
+  });
+
+  // 操作按钮
+  var actionsEl = document.getElementById('group-detail-actions');
+  var actionsHtml = '';
+  if (isOwner) {
+    actionsHtml += '<button class="toolbar-btn" id="gd-add-member" style="font-size:12px;padding:4px 10px">➕ 添加成员</button>';
+    actionsHtml += '<button class="toolbar-btn danger" id="gd-dissolve" style="font-size:12px;padding:4px 10px">🗑️ 解散群</button>';
+  } else {
+    actionsHtml += '<button class="toolbar-btn" id="gd-invite-member" style="font-size:12px;padding:4px 10px">📨 邀请成员</button>';
+  }
+  actionsEl.innerHTML = actionsHtml;
+
+  // 绑定添加成员（群主直接拉人）
+  var addBtn = document.getElementById('gd-add-member');
+  if (addBtn) {
+    addBtn.addEventListener('click', function() {
+      socket.emit('get-all-users');
+      // 复用创建群聊的弹窗改造成添加成员模式
+      var modal2 = document.getElementById('create-group-modal');
+      var titleEl = modal2.querySelector('.create-title');
+      var confirmBtn = document.getElementById('create-group-confirm');
+      titleEl.textContent = '添加成员 - ' + g.name;
+      confirmBtn.textContent = '添加（0人）';
+      confirmBtn.disabled = true;
+      modal2.dataset.groupTarget = groupId;
+      modal2.style.display = 'flex';
+    });
+  }
+
+  // 绑定邀请成员（普通成员申请）
+  var inviteBtn = document.getElementById('gd-invite-member');
+  if (inviteBtn) {
+    inviteBtn.addEventListener('click', function() {
+      socket.emit('get-all-users');
+      // 同样复用创建群聊弹窗，但改为申请模式
+      var modal2 = document.getElementById('create-group-modal');
+      var titleEl = modal2.querySelector('.create-title');
+      var confirmBtn = document.getElementById('create-group-confirm');
+      titleEl.textContent = '邀请成员 - ' + g.name;
+      confirmBtn.textContent = '申请邀请（0人）';
+      confirmBtn.disabled = true;
+      modal2.dataset.groupTarget = groupId;
+      modal2.dataset.inviteMode = 'request';
+      modal2.style.display = 'flex';
+    });
+  }
+
+  // 绑定解散
+  var dissolveBtn = document.getElementById('gd-dissolve');
+  if (dissolveBtn) {
+    dissolveBtn.addEventListener('click', function() {
+      if (confirm('确定解散群聊「' + g.name + '」？此操作不可撤销！')) {
+        if (confirm('再次确认：所有成员将被移出，群聊历史将被保留但无法访问。')) {
+          socket.emit('group-dissolve', { groupId: groupId });
+        }
+      }
+    });
+  }
+
+  modal.style.display = 'flex';
+}
+
 // 消息权限申请回应
 socket.on('request-sent', (msg) => {
   showToast('📤 ' + msg);
@@ -270,6 +520,143 @@ socket.on('toast', ({ msg, type }) => {
   if (type === 'error') showToast('❌ ' + msg);
   else showToast(msg);
 });
+
+// ─── 群聊 Socket 事件 ─────────────────────────────────
+
+socket.on('group-created', function(g) {
+  if (!myGroups.find(function(x) { return x.id === g.id; })) {
+    myGroups.push(g);
+  }
+  renderGroupList();
+  showToast('💬 你被加入群聊「' + g.name + '」');
+});
+
+socket.on('group-list-result', function(list) {
+  myGroups = list || [];
+  renderGroupList();
+});
+
+socket.on('group-updated', function(data) {
+  // data: { groupId, type, members, member, group }
+  if (data.group) {
+    var idx = myGroups.findIndex(function(x) { return x.id === data.groupId; });
+    if (idx >= 0) myGroups[idx] = data.group;
+    else myGroups.push(data.group);
+  }
+  renderGroupList();
+  // 如果当前打开的是这个群的聊天窗口，刷新标题
+  var modal = document.getElementById('chat-modal');
+  if (modal && modal.dataset.groupId === data.groupId && data.group) {
+    var nameEl = document.getElementById('chat-with');
+    if (nameEl) {
+      nameEl.innerHTML = '# ' + esc(data.group.name) + ' <span style="font-weight:400;font-size:12px;color:var(--text-dim)">(' + (data.group.members ? data.group.members.length : 0) + '人)</span>';
+    }
+  }
+});
+
+socket.on('group-dissolved', function(data) {
+  myGroups = myGroups.filter(function(g) { return g.id !== data.groupId; });
+  renderGroupList();
+  // 如果当前打开的是这个群的聊天窗口，关闭
+  var modal = document.getElementById('chat-modal');
+  if (modal && modal.dataset.groupId === data.groupId) {
+    modal.style.display = 'none';
+    currentGroupId = null;
+  }
+  showToast('💬 群聊「' + (data.group ? data.group.name : '') + '」已解散');
+});
+
+socket.on('group-member-removed', function(data) {
+  myGroups = myGroups.filter(function(g) { return g.id !== data.groupId; });
+  renderGroupList();
+  var modal = document.getElementById('chat-modal');
+  if (modal && modal.dataset.groupId === data.groupId) {
+    modal.style.display = 'none';
+    currentGroupId = null;
+  }
+  showToast('你已被移出群聊');
+});
+
+socket.on('group-message', function(data) {
+  // data: { groupId, from, text, time }
+  var modal = document.getElementById('chat-modal');
+  var msgsEl = document.getElementById('chat-msgs');
+  var isOpen = modal && modal.style.display === 'block';
+  var isThisGroup = modal && modal.dataset.groupId === data.groupId;
+
+  if (isThisGroup) {
+    // 当前打开就是这个群
+    var lastMsg = msgsEl.lastElementChild;
+    var isMe = data.from === myName;
+    var lastSame = lastMsg && (
+      (isMe && lastMsg.classList.contains('me') && lastMsg.classList.contains('group')) ||
+      (!isMe && !lastMsg.classList.contains('me') && lastMsg.classList.contains('group'))
+    );
+    msgsEl.innerHTML += renderGroupMsgHtml(data.from, data.text, data.time, isMe, lastSame);
+    msgsEl.scrollTop = msgsEl.scrollHeight;
+  }
+
+  // 通知（如果不是正在看这个群）
+  if (!isThisGroup && data.from !== myName) {
+    var g = myGroups.find(function(x) { return x.id === data.groupId; });
+    showNotification(g ? g.name : '群聊', data.from + ': ' + data.text);
+  }
+});
+
+socket.on('group-chat-history-result', function(data) {
+  var msgsEl = document.getElementById('chat-msgs');
+  if (!msgsEl) return;
+  var list = data.messages || [];
+  msgsEl.innerHTML = list.map(function(m, i) {
+    var isMe = m.from === myName;
+    var prev = i > 0 ? list[i - 1] : null;
+    var merge = prev && prev.from === m.from;
+    return renderGroupMsgHtml(m.from, m.text, m.time, isMe, merge);
+  }).join('');
+  msgsEl.scrollTop = msgsEl.scrollHeight;
+});
+
+socket.on('all-users-list', function(users) {
+  allUsers = users || [];
+  var modal = document.getElementById('create-group-modal');
+  if (modal && modal.style.display === 'flex') {
+    renderCreateGroupUsers(users);
+    updateCreateBtn();
+    // 绑定 checkbox 变更
+    document.querySelectorAll('#create-group-user-list .create-user-cb').forEach(function(cb) {
+      cb.addEventListener('change', updateCreateBtn);
+    });
+  }
+});
+
+socket.on('group-invite-request', function(req) {
+  // req: { id, from, candidate, groupId }
+  var g = myGroups.find(function(x) { return x.id === req.groupId; });
+  var msg = '📨 ' + req.from + ' 申请邀请 ' + req.candidate + ' 加入群「' + (g ? g.name : '') + '」';
+  // 显示审批 toast 或弹窗
+  if (confirm(msg + '\n\n点击确定批准，取消拒绝')) {
+    socket.emit('group-invite-approve', { requestId: req.id, approve: true });
+  } else {
+    socket.emit('group-invite-approve', { requestId: req.id, approve: false });
+  }
+});
+
+socket.on('group-invite-result', function(data) {
+  if (data.approved) {
+    showToast('✅ 邀请已批准，' + data.candidate + ' 已加入群聊');
+  } else {
+    showToast('❌ 邀请申请被拒绝');
+  }
+});
+
+socket.on('group-invite-sent', function(msg) {
+  showToast('📤 ' + msg);
+});
+
+socket.on('group-error', function(msg) {
+  showToast('❌ ' + msg);
+});
+
 socket.on('no-permission', (msg) => {
   showToast('❌ ' + msg);
 });
@@ -541,6 +928,10 @@ let myRole = savedAuth ? (savedAuth.role || (isAdmin ? 'editor' : 'commenter')) 
 let myToken = savedAuth ? savedAuth.token : '';
 let myAvatar = savedAuth ? (savedAuth.avatar || '') : '';
 const avatarMap = {}; // userName → avatar filename
+
+let myGroups = []; // user's groups
+let allUsers = []; // all registered users (for create-group)
+let currentGroupId = null; // group chat context
 const AVATAR_COLORS = ['#4f46e5','#0891b2','#059669','#d97706','#dc2626','#7c3aed','#db2777','#2563eb'];
 
 // 初始化头像
@@ -572,6 +963,7 @@ socket.on('connect', () => {
 socket.on('login-success', ({ userName, isAdmin: admin, role, avatar }) => {
   avatarMap[userName] = avatar || '';
   isAdmin = admin;
+  socket.emit('group-list');
   myRole = role || (isAdmin ? 'editor' : 'commenter');
   if (avatar) {
     myAvatar = avatar;
@@ -950,6 +1342,10 @@ function switchModule(moduleName) {
     socket.emit('admin-get-stats');
     socket.emit('admin-list-resets');
     socket.emit('admin-list-msg-requests');
+  }
+  // 获取群列表（消息面板和管理面板都加载）
+  if (moduleName === 'messages' || moduleName === 'admin') {
+    socket.emit('group-list');
   }
 }
 
@@ -1504,6 +1900,71 @@ function initUI() {
     transferBtn.addEventListener('click', doTransfer);
   }
   
+
+  // 创建群聊
+  var createGroupBtn = document.getElementById('create-group-btn');
+  var createGroupCancel = document.getElementById('create-group-cancel');
+  var createGroupConfirm = document.getElementById('create-group-confirm');
+  var createGroupModal = document.getElementById('create-group-modal');
+  var groupDetailClose = document.getElementById('group-detail-close');
+  var groupDetailModal = document.getElementById('group-detail-modal');
+
+  if (createGroupBtn) createGroupBtn.addEventListener('click', openCreateGroup);
+  if (createGroupCancel) createGroupCancel.addEventListener('click', function() {
+    createGroupModal.style.display = 'none';
+    delete createGroupModal.dataset.groupTarget;
+    delete createGroupModal.dataset.inviteMode;
+    // 恢复标题
+    var titleEl = createGroupModal.querySelector('.create-title');
+    if (titleEl) titleEl.textContent = '创建群聊';
+    var confirmBtn = document.getElementById('create-group-confirm');
+    if (confirmBtn) confirmBtn.textContent = '创建（0人）';
+  });
+  if (createGroupConfirm) createGroupConfirm.addEventListener('click', function() {
+    var name = document.getElementById('create-group-name').value.trim();
+    var members = getSelectedMembers();
+    if (!name) { showToast('请输入群名称'); return; }
+    if (members.length === 0) { showToast('请选择至少一个成员'); return; }
+    var targetGroupId = createGroupModal.dataset.groupTarget;
+    var inviteMode = createGroupModal.dataset.inviteMode;
+
+    if (targetGroupId && inviteMode === 'request') {
+      // 普通成员申请拉人
+      members.forEach(function(m) {
+        socket.emit('group-invite-request', { groupId: targetGroupId, candidate: m });
+      });
+      showToast('📤 邀请申请已发送给群主');
+    } else if (targetGroupId) {
+      // 群主添加成员
+      socket.emit('group-add-member', { groupId: targetGroupId, members: members });
+      showToast('✅ 成员已添加');
+    } else {
+      // 创建新群
+      socket.emit('group-create', { name: name, members: members });
+    }
+    createGroupModal.style.display = 'none';
+    document.getElementById('create-group-name').value = '';
+    delete createGroupModal.dataset.groupTarget;
+    delete createGroupModal.dataset.inviteMode;
+    var titleEl = createGroupModal.querySelector('.create-title');
+    if (titleEl) titleEl.textContent = '创建群聊';
+    var confirmBtn = document.getElementById('create-group-confirm');
+    if (confirmBtn) confirmBtn.textContent = '创建（0人）';
+  });
+  if (groupDetailClose) groupDetailClose.addEventListener('click', function() {
+    groupDetailModal.style.display = 'none';
+  });
+  if (groupDetailModal) groupDetailModal.addEventListener('click', function(e) {
+    if (e.target === groupDetailModal) groupDetailModal.style.display = 'none';
+  });
+  if (createGroupModal) createGroupModal.addEventListener('click', function(e) {
+    if (e.target === createGroupModal) {
+      createGroupModal.style.display = 'none';
+      delete createGroupModal.dataset.groupTarget;
+      delete createGroupModal.dataset.inviteMode;
+    }
+  });
+
   if (receiveOk) {
     receiveOk.addEventListener('click', () => {
       receiveModal.style.display = 'none';
@@ -1514,8 +1975,19 @@ function initUI() {
   const chatSendBtn = document.getElementById('chat-send-btn');
   const chatInput = document.getElementById('chat-input');
   const chatClose = document.getElementById('chat-modal-close');
-  if (chatSendBtn) chatSendBtn.addEventListener('click', sendChat);
-  if (chatInput) chatInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') sendChat(); });
+  if (chatSendBtn) chatSendBtn.addEventListener('click', function() {
+    if (document.getElementById('chat-modal').dataset.groupId) {
+      sendGroupChat();
+    } else {
+      sendChat();
+    }
+  });
+  if (chatInput) chatInput.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') {
+      if (document.getElementById('chat-modal').dataset.groupId) sendGroupChat();
+      else sendChat();
+    }
+  });
   if (chatClose) chatClose.addEventListener('click', () => {
     document.getElementById('chat-modal').style.display = 'none';
   });
