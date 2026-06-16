@@ -1727,31 +1727,47 @@ function handleBridgeMessage(fromId, msg) {
   try {
     switch (msg.type) {
       case 'projects-sync':
-        // 找出新项目（本服务器没有的）
-        const newProjects = [];
-        (msg.projects || []).forEach(rp => {
-          if (!projects.find(x => x.id === rp.id)) newProjects.push(rp);
-        });
+        // 记录合并前的项目ID，用于判断哪些是新项目
+        const localIdsBefore = new Set(projects.map(p => p.id));
         projectSvc.mergeProjects(msg.projects);
-        // 逐个通知有权限的用户（新项目用 project-created，已有项目不做全量广播）
-        newProjects.forEach(np => {
+        // 批量通知：每个socket一次性收到所有有权限的变更（比逐项目逐socket更省流量）
+        const newProjectsMap = {};  // socketId → projects[]
+        const updateProjectsMap = {}; // socketId → projects[]
+        (msg.projects || []).forEach(rp => {
+          const isNew = !localIdsBefore.has(rp.id);
           for (const [sid, s] of io.sockets.sockets) {
             if (!s.userName) continue;
-            const filtered = getFilteredProjects(s.userName, [np]);
-            if (filtered.length) s.emit('project-created', { ...np });
+            const filtered = getFilteredProjects(s.userName, [rp]);
+            if (!filtered.length) continue;
+            if (isNew) {
+              if (!newProjectsMap[sid]) newProjectsMap[sid] = [];
+              newProjectsMap[sid].push(rp);
+            } else {
+              if (!updateProjectsMap[sid]) updateProjectsMap[sid] = [];
+              const p = projects.find(x => x.id === rp.id);
+              if (p) updateProjectsMap[sid].push({ id: p.id, name: p.name, data: p.data, updatedAt: p.updatedAt });
+            }
           }
         });
+        // 批量发送
+        for (const [sid, s] of io.sockets.sockets) {
+          if (newProjectsMap[sid]) newProjectsMap[sid].forEach(np => s.emit('project-created', { ...np }));
+          if (updateProjectsMap[sid]) updateProjectsMap[sid].forEach(up => s.emit('project-updated', up));
+        }
         broadcastToPeers(msg, fromId);
         break;
       case 'project-transfer':
         const newOnes = [];
-        msg.projects.forEach(p => { if (!projects.find(x => x.id === p.id)) { projects.push({...p}); newOnes.push(p); } });
-        // 逐个通知有权限的用户
-        newOnes.forEach(np => {
-          for (const [sid, s] of io.sockets.sockets) {
-            if (!s.userName) continue;
-            const filtered = getFilteredProjects(s.userName, [np]);
-            if (filtered.length) s.emit('project-created', { ...np });
+        msg.projects.forEach(p => {
+          if (!projects.find(x => x.id === p.id)) {
+            projects.push({...p});
+            newOnes.push(p);
+            // 按权限通知
+            for (const [sid, s] of io.sockets.sockets) {
+              if (!s.userName) continue;
+              const filtered = getFilteredProjects(s.userName, [p]);
+              if (filtered.length) s.emit('project-created', { ...p });
+            }
           }
         });
         broadcastToBrowsers({ type: 'projects-received', projects: newOnes, from: msg.fromName });
