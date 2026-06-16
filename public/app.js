@@ -259,7 +259,12 @@ socket.on('chat-message', ({ from, text, time }) => {
   }
 });
 
+let _sendingLock = false;
+
 function sendChat() {
+  if (_sendingLock) return;
+  _sendingLock = true;
+  setTimeout(function() { _sendingLock = false; }, 500);
   const modal = document.getElementById('chat-modal');
   const inputEl = document.getElementById('chat-input');
   if (!modal || !inputEl) return;
@@ -346,16 +351,18 @@ document.addEventListener('DOMContentLoaded', function() {
 
 // 发送群消息
 function sendGroupChat() {
+  if (_sendingLock) return;
+  _sendingLock = true;
+  setTimeout(function() { _sendingLock = false; }, 500);
   var modal = document.getElementById('chat-modal');
   var inputEl = document.getElementById('chat-input');
   if (!modal || !inputEl) return;
   var groupId = modal.dataset.groupId;
-  if (!groupId) return; // not group mode, fallback to private
+  if (!groupId) return;
   var text = inputEl.value.trim();
   if (!text) return;
   socket.emit('group-send', { groupId: groupId, text: text });
   inputEl.value = '';
-  // 本地立即显示
   var msgsEl = document.getElementById('chat-msgs');
   if (msgsEl) {
     var lastMsg = msgsEl.lastElementChild;
@@ -1996,7 +2003,7 @@ function initUI() {
     }
   });
   if (chatInput) chatInput.addEventListener('keydown', (e) => {
-    if (e.key === 'Enter') {
+    if (e.key === 'Enter' && !e.isComposing) {
       if (document.getElementById('chat-modal').dataset.groupId) sendGroupChat();
       else sendChat();
     }
