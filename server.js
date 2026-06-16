@@ -89,6 +89,51 @@ let passwordResets = loadJSON(PWD_RESETS_FILE, []);
 let pwdResetId = passwordResets.length > 0 ? Math.max(...passwordResets.map(r => r.id || 0)) : 0;
 function savePasswordResets() { saveJSON(PWD_RESETS_FILE, passwordResets); }
 
+// ─── 权限过滤的项目同步工具 ──────────────────────────────
+// 按用户权限过滤项目列表
+function getFilteredProjects(userName, allProjects) {
+  const user = auth && auth.users ? auth.users[userName] : null;
+  const isAdmin = user && user.isAdmin;
+  return (allProjects || projects).filter(p => {
+    if (p.deleted) return false;                 // 已删除不显示
+    if (isAdmin) return true;                     // 管理员看全部
+    if (p.owner === userName) return true;        // 所有者看自己的
+    if (p.visibility !== 'private') return true;  // 公开项目所有人可见
+    return false;                                 // 其他人的 private → 隐藏
+  });
+}
+
+// 给某个 socket 发送其权限范围内的项目列表
+function emitFilteredProjects(socket) {
+  const userName = socket.userName || '';
+  const filtered = getFilteredProjects(userName);
+  const peerList = [];
+  for (const [sid, pr] of peers) {
+    peerList.push({ serverId: sid, name: pr.name, ip: pr.ip, port: pr.port, connected: pr.connected, note: pr.note || '', reconnecting: !pr.connected && pr.reconnectTimer !== null });
+  }
+  const userList = [...onlineUsers].map(([id, u]) => ({ id, ...u }));
+  socket.emit('init', {
+    serverId: SERVER_ID,
+    serverName: SERVER_NAME,
+    projects: filtered.map(p => ({...p})),
+    peers: peerList,
+    onlineUsers: userList,
+    scanState,
+  });
+}
+
+// 向所有在线用户广播其有权限的项目更新（比直接 io.emit 更精确）
+function broadcastProjectUpdateToAll(projectId, data) {
+  for (const [sid, s] of io.sockets.sockets) {
+    if (!s.userName) continue;
+    const filtered = getFilteredProjects(s.userName);
+    const p = filtered.find(x => x.id === projectId);
+    if (p) {
+      s.emit('project-updated', { id: p.id, name: p.name, data: p.data, updatedAt: p.updatedAt });
+    }
+  }
+}
+
 // ─── 消息权限 ──────────────────────────────────────────
 let messagePermissions = loadJSON(MSG_PERM_FILE, {});
 function saveMsgPermissions() { saveJSON(MSG_PERM_FILE, messagePermissions); }
@@ -603,12 +648,11 @@ io.on('connection', (socket) => {
     const userObj = users[u.name];
     userList.push({ id: sid, name: u.name, joinedAt: u.joinedAt, isAdmin: u.isAdmin || false, role: userObj?.role || (u.isAdmin ? 'editor' : 'commenter') });
   }
-  socket.emit('init', {
-    serverId: SERVER_ID, serverName: SERVER_NAME,
-    projects: projects.map(p => ({...p})), peers: peerList,
-    scanState, onlineUsers: userList,
-    operationLog: getRecentLogs(50),
-  });
+  // 发送权限过滤后的项目
+  emitFilteredProjects(socket);
+  // 额外信息（只发一次）
+  socket.emit('online-users', userList);
+  socket.emit('operation-log', getRecentLogs(50));
 
   // ── 认证 ──
   socket.on('join', async ({ name, password, fingerprint, token }) => {
@@ -861,7 +905,7 @@ io.on('connection', (socket) => {
     p.name = name.trim();
     p.updatedAt = Date.now();
     projectSvc.saveProjects();
-    io.emit('project-updated', { id: p.id, name: p.name, data: p.data, updatedAt: p.updatedAt });
+    broadcastProjectUpdateToAll(p.id);
     broadcastToPeers({ type: 'projects-sync', projects: projects.map(x => ({...x})) }, null);
     addLog(socket.id, socket.userName, 'renamed', p.type, name);
   });
@@ -898,8 +942,8 @@ io.on('connection', (socket) => {
     if (data.name !== undefined) p.name = data.name;
     if (data.data !== undefined) p.data = data.data;
     p.updatedAt = Date.now();
-    // 广播给所有其他在线用户（发送者本地已更新）
-    socket.broadcast.emit('project-updated', { id: p.id, name: p.name, data: p.data, updatedAt: p.updatedAt });
+    // 广播给所有有权限的在线用户（发送者本地已更新）
+    broadcastProjectUpdateToAll(p.id);
     addLog(socket.id, socket.userName || SERVER_NAME, 'updated', p.type, p.name);
     // 记录操作历史（用于撤回）
     pushProjectOp(p.id, socket.userName, 'update', before, JSON.parse(JSON.stringify(p.data || {})));
@@ -1445,11 +1489,25 @@ io.on('connection', (socket) => {
     if (!['private', 'public-read', 'public-edit'].includes(visibility)) return;
     const p = projects.find(x => x.id === projectId);
     if (!p || !projectSvc.canChangeVisibility(socket.userName, p, auth)) { socket.emit('project-update-error', '你没有权限修改项目可见性'); return; }
+    const oldVis = p.visibility;
     p.visibility = visibility;
     p.updatedAt = Date.now();
     projectSvc.saveProjects();
-    io.emit('project-visibility-changed', { projectId, visibility, changedBy: socket.userName });
     addLog(socket.id, socket.userName, 'changed visibility', p.type, p.name + ' → ' + visibility);
+    // 分别通知每个在线用户（新获得权限的用户能收到 project-created）
+    for (const [sid, s] of io.sockets.sockets) {
+      if (!s.userName) continue;
+      const userIsAdmin = auth && typeof auth.isAdmin === 'function' && auth.isAdmin(s.userName);
+      const oldFiltered = oldVis === 'private' && p.owner !== s.userName && !userIsAdmin
+        ? [] : getFilteredProjects(s.userName, [p]);
+      const newFiltered = getFilteredProjects(s.userName, [p]);
+      if (newFiltered.length && !oldFiltered.length) {
+        // 用户新获得访问权限 → 发送完整项目
+        s.emit('project-created', { ...p });
+      } else if (newFiltered.length) {
+        s.emit('project-visibility-changed', { projectId, visibility, changedBy: socket.userName });
+      }
+    }
   });
 
   // ── 操作撤回/恢复 ──

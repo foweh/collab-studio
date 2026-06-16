@@ -1033,11 +1033,38 @@ socket.on('role-changed', ({ role }) => {
   showAlert(`你的角色已变更为: ${role}`, '角色变更', '🎭');
 });
 
+// ─── 客户端缓存 ─────────────────────────────────────────
+const CACHE_KEY = 'collab-projects-cache';
+const CACHE_FRESH_MS = 30000; // 30秒内缓存有效
+
+function loadProjectCache() {
+  try {
+    const raw = localStorage.getItem(CACHE_KEY);
+    if (!raw) return null;
+    const cache = JSON.parse(raw);
+    if (Date.now() - cache.ts < CACHE_FRESH_MS) return cache.projects;
+    return null; // 缓存过期
+  } catch(e) { return null; }
+}
+
+function saveProjectCache(projList) {
+  try {
+    localStorage.setItem(CACHE_KEY, JSON.stringify({ ts: Date.now(), projects: projList }));
+  } catch(e) { /* 存储空间不足时忽略 */ }
+}
+
 // ─── Socket 事件 ─────────────────────────────────────────
 socket.on('init', (data) => {
   serverId = data.serverId;
   serverName = data.serverName;
-  projects = data.projects || [];
+  const cached = loadProjectCache();
+  if (cached && cached.length > 0) {
+    // 有新鲜缓存 → 先用缓存，等广播更新
+    projects = cached;
+    console.log('[缓存] 使用本地项目缓存, 共', cached.length, '个项目');
+  } else {
+    projects = data.projects || [];
+  }
   peers = data.peers || [];
   onlineUsers = data.onlineUsers || [];
   scanState = data.scanState || 'idle';
@@ -1066,14 +1093,18 @@ socket.on('bridge-message', (msg) => {
 
 socket.on('project-created', (p) => {
   projects.push(p);
+  saveProjectCache(projects);
   renderProjects();
 });
 
 socket.on('project-deleted', (id) => {
   const idx = projects.findIndex(p => p.id === id);
   if (idx >= 0) projects.splice(idx, 1);
+  saveProjectCache(projects);
   renderProjects();
 });
+
+
 
 socket.on('project-permanently-deleted', (id) => {
   console.log('收到永久删除响应:', id);
@@ -1084,7 +1115,10 @@ socket.on('project-permanently-deleted', (id) => {
 
 socket.on('project-updated', (p) => {
   const idx = projects.findIndex(x => x.id === p.id);
-  if (idx >= 0) projects[idx] = { ...projects[idx], ...p };
+  if (idx >= 0) {
+    projects[idx] = { ...projects[idx], ...p };
+    saveProjectCache(projects);
+  }
   renderProjects();
 });
 
