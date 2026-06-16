@@ -122,9 +122,10 @@ function emitFilteredProjects(socket) {
   });
 }
 
-// 向所有在线用户广播其有权限的项目更新（比直接 io.emit 更精确）
-function broadcastProjectUpdateToAll(projectId, data) {
+// 向所有在线用户广播其有权限的项目更新（排除发送者）
+function broadcastProjectUpdateToAll(projectId, excludeSid) {
   for (const [sid, s] of io.sockets.sockets) {
+    if (sid === excludeSid) continue;
     if (!s.userName) continue;
     const filtered = getFilteredProjects(s.userName);
     const p = filtered.find(x => x.id === projectId);
@@ -905,7 +906,7 @@ io.on('connection', (socket) => {
     p.name = name.trim();
     p.updatedAt = Date.now();
     projectSvc.saveProjects();
-    broadcastProjectUpdateToAll(p.id);
+    broadcastProjectUpdateToAll(p.id, socket.id);
     broadcastToPeers({ type: 'projects-sync', projects: projects.map(x => ({...x})) }, null);
     addLog(socket.id, socket.userName, 'renamed', p.type, name);
   });
@@ -942,8 +943,8 @@ io.on('connection', (socket) => {
     if (data.name !== undefined) p.name = data.name;
     if (data.data !== undefined) p.data = data.data;
     p.updatedAt = Date.now();
-    // 广播给所有有权限的在线用户（发送者本地已更新）
-    broadcastProjectUpdateToAll(p.id);
+    // 广播给所有有权限的在线用户（排除发送者）
+    broadcastProjectUpdateToAll(p.id, socket.id);
     addLog(socket.id, socket.userName || SERVER_NAME, 'updated', p.type, p.name);
     // 记录操作历史（用于撤回）
     pushProjectOp(p.id, socket.userName, 'update', before, JSON.parse(JSON.stringify(p.data || {})));
