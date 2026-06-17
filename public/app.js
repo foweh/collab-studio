@@ -36,6 +36,7 @@ let serverName = '';
 let projects = [];
 let peers = [];
 let currentFolderPath = [];
+let currentOpenProjectId = null; // 当前打开的项目 ID（用于 project-open/close 追踪）
 
 // DOM
 const $ = (s) => document.querySelector(s);
@@ -1019,11 +1020,31 @@ socket.on('login-error', (msg) => {
   setTimeout(() => { window.location.href = '/'; }, 2000);
 });
 
+socket.on('project-removed', (projectId) => {
+  // 项目从列表中移除（权限变更导致不可见）
+  projects = projects.filter(p => p.id !== projectId);
+  renderProjects();
+  if (currentOpenProjectId === projectId) {
+    currentOpenProjectId = null;
+    switchModule('projects');
+  }
+});
+
 socket.on('kicked', (msg) => {
   showAlert(msg, '已被踢出', '🚫');
   sessionStorage.removeItem('collab-auth');
   setTimeout(() => { window.location.href = '/'; }, 2000);
   app.style.display = 'none';
+});
+// ── 被踢出项目（权限/可见性变更） ──
+socket.on('project-kicked', ({ projectId, name, reason, changedBy }) => {
+  showAlert(`「${name || projectId}」${reason || '已被限制访问'}\n操作者: ${changedBy || '管理员'}`, '项目访问受限', '🔒');
+  // 强制关闭项目，返回项目列表
+  if (currentOpenProjectId === projectId) {
+    currentOpenProjectId = null;
+  }
+  // 切换到项目面板
+  switchModule('projects');
 });
 
 socket.on('role-changed', ({ role }) => {
@@ -1413,6 +1434,11 @@ function switchModule(moduleName) {
     if (toolbar) toolbar.style.display = '';
     currentFolderPath = [];
     renderProjects();
+    // 通知服务器：关闭当前查看的项目
+    if (currentOpenProjectId) {
+      socket.emit('project-close', { projectId: currentOpenProjectId });
+      currentOpenProjectId = null;
+    }
   }
   if (moduleName === 'admin') {
     socket.emit('admin-list-users');
@@ -1935,6 +1961,11 @@ function openProject(p) {
     return;
   }
   
+  // 关闭之前打开的项目（通知服务器）
+  if (currentOpenProjectId && currentOpenProjectId !== p.id) {
+    socket.emit('project-close', { projectId: currentOpenProjectId });
+  }
+  
   navBtns.forEach(b => b.classList.remove('active'));
   panels.forEach(pl => pl.classList.remove('active'));
   
@@ -1966,6 +1997,10 @@ function openProject(p) {
   if (window.CollabStudio.modules[moduleName] && window.CollabStudio.modules[moduleName].openProject) {
     window.CollabStudio.modules[moduleName].openProject(p);
   }
+  
+  // 通知服务器：我在查看这个项目
+  socket.emit('project-open', { projectId: p.id });
+  currentOpenProjectId = p.id;
 }
 
 // ─── 初始化 UI ──────────────────────────────────────────

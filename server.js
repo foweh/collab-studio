@@ -227,6 +227,23 @@ function foundPeer() {
 // ─── 在线用户追踪 ────────────────────────────────────────
 const onlineUsers = new Map(); // socket.id → { name, joinedAt, isAdmin, fingerprint }
 
+// ─── 项目查看者追踪（用于权限变更时踢人） ────────────────
+const projectViewers = new Map(); // projectId → Set<socketId>
+function addProjectViewer(projectId, socketId) {
+  if (!projectViewers.has(projectId)) projectViewers.set(projectId, new Set());
+  projectViewers.get(projectId).add(socketId);
+}
+function removeProjectViewer(projectId, socketId) {
+  const s = projectViewers.get(projectId);
+  if (s) { s.delete(socketId); if (s.size === 0) projectViewers.delete(projectId); }
+}
+function removeViewerFromAll(socketId) {
+  for (const [pid, viewers] of projectViewers) {
+    viewers.delete(socketId);
+    if (viewers.size === 0) projectViewers.delete(pid);
+  }
+}
+
 function broadcastOnlineUsers() {
   const list = [];
   for (const [sid, u] of onlineUsers) {
@@ -1510,7 +1527,7 @@ io.on('connection', (socket) => {
     p.updatedAt = Date.now();
     projectSvc.saveProjects();
     addLog(socket.id, socket.userName, 'changed visibility', p.type, p.name + ' → ' + visibility);
-    // 分别通知每个在线用户（新获得权限的用户能收到 project-created）
+    // 分别通知每个在线用户
     for (const [sid, s] of io.sockets.sockets) {
       if (!s.userName) continue;
       const userIsAdmin = auth && typeof auth.isAdmin === 'function' && auth.isAdmin(s.userName);
@@ -1520,9 +1537,32 @@ io.on('connection', (socket) => {
       if (newFiltered.length && !oldFiltered.length) {
         // 用户新获得访问权限 → 发送完整项目
         s.emit('project-created', { ...p });
+      } else if (!newFiltered.length && oldFiltered.length) {
+        // ⚡ 用户失去访问权限 → 踢出
+        s.emit('project-removed', projectId);
+        s.emit('project-kicked', { projectId, name: p.name, reason: '项目可见性已改为 ' + visibility, changedBy: socket.userName });
+        removeProjectViewer(projectId, sid);
       } else if (newFiltered.length) {
         s.emit('project-visibility-changed', { projectId, visibility, changedBy: socket.userName });
       }
+    }
+    // ⚡ 额外：踢出正在查看此项目的非所有者/非管理员
+    const viewers = projectViewers.get(projectId);
+    if (viewers) {
+      const toKick = [];
+      for (const sid of viewers) {
+        const s = io.sockets.sockets.get(sid);
+        if (!s || !s.userName) { toKick.push(sid); continue; }
+        const isPrivileged = s.userName === p.owner || (auth && typeof auth.isAdmin === 'function' && auth.isAdmin(s.userName));
+        if (isPrivileged) continue;
+        const filtered = getFilteredProjects(s.userName, [p]);
+        if (!filtered.length) {
+          s.emit('project-kicked', { projectId, name: p.name, reason: '项目可见性已被改为 ' + visibility, changedBy: socket.userName });
+          toKick.push(sid);
+        }
+      }
+      toKick.forEach(sid => viewers.delete(sid));
+      if (viewers.size === 0) projectViewers.delete(projectId);
     }
   });
 
@@ -1729,9 +1769,18 @@ io.on('connection', (socket) => {
     const history = groupChatHistory[groupId] || [];
     socket.emit('group-chat-history-result', { groupId, messages: history });
   });
+  socket.on('project-open', ({ projectId }) => {
+    if (!projectId || !validateId(projectId)) return;
+    addProjectViewer(projectId, socket.id);
+  });
+  socket.on('project-close', ({ projectId }) => {
+    if (!projectId || !validateId(projectId)) return;
+    removeProjectViewer(projectId, socket.id);
+  });
   socket.on('disconnect', () => {
     if (socket.userName) auth.updateLastSeen(socket.userName);
     onlineUsers.delete(socket.id);
+    removeViewerFromAll(socket.id);
     broadcastOnlineUsers();
     broadcastToPeers({ type: 'focus-release-all', user: socket.userName || SERVER_NAME }, null);
   });
