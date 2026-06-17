@@ -1,167 +1,79 @@
-# CollabStudio 🎬
+# 🎬 CollabStudio — 多机协作创作工作室
 
-> **Real-time collaborative creative studio** — Write scripts, draw mind maps, and tell stories together over LAN. Zero setup, no cloud dependency.
+> 零配置局域网实时协作平台，支持剧本、思维导图、故事、分镜同步编辑。
 
-[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
-![Node](https://img.shields.io/badge/node-%3E%3D18-brightgreen)
-![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-lightgrey)
+## ✨ 功能
 
----
+| 模块 | 说明 |
+|------|------|
+| 📜 **剧本编辑器** | 幕/场/对白三级结构，角色管理，拖拽排序，导出 Markdown |
+| 🧠 **思维导图** | 多根节点，拖拽/缩放/双指缩放，颜色/标记，导出 PNG |
+| 📖 **故事编辑器** | 章节管理，富文本编辑，实时同步 |
+| 🎬 **分镜 (Storyboard)** | 镜头列表 + 绘画板 (Canvas)，图片上传，镜头锁防冲突 |
+| 💬 **群聊 & 私聊** | 群组管理，消息持久化，管理员审批 |
+| 🔒 **权限控制** | 三级可见性 (private/public-read/public-edit)，角色管理 |
+| 🌐 **局域网自动发现** | UDP 广播 + 服务端桥接，零配置即插即用 |
+| ⚡ **实时秒级同步** | 版本化乐观并发控制，图片上传延迟冲突自动解决 |
+| 📱 **移动端适配** | 触屏拖拽/双指缩放/长按菜单 |
 
-## ✨ Features
+## 🛠 技术栈
 
-| Feature | Description |
-|---|---|
-| **📜 Script Writer** | Multi-act, scene-by-scene screenplay editor with character dialogues |
-| **🧠 Mind Map** | Elegant visual mind mapping with bezier curves, gradients & zoom |
-| **📖 Story Editor** | Chapter-based story writing with real-time sync |
-| **💬 Group Chat** | Built-in chat across all connected devices |
-| **🔒 Conflict Lock** | Zero-latency presence system — see who's editing what, prevents conflicts |
-| **📤 Project Transfer** | Select & send projects to specific teammates |
-| **🔌 LAN Discovery** | Automatic peer discovery via UDP broadcast |
-| **⏱️ 5-min Scan** | Smart scan timeout with user notification |
-| **🧪 Local Test Mode** | Run two instances on one machine for testing |
+- **Runtime**: Node.js ≥ 18
+- **Server**: Express 4 + Socket.IO 4
+- **Client**: Vanilla JS + Vue 3 (分镜 SPA)
+- **Auth**: bcryptjs + session tokens + device fingerprint
+- **Storage**: JSON 文件 (atomic rename 持久化)
+- **LAN**: UDP broadcast + Socket.IO bridge
 
----
-
-## 🚀 Quick Start
-
-### 1. Install
+## 🚀 快速开始
 
 ```bash
-git clone https://github.com/foweh/collab-studio.git
-cd collab-studio
+# 安装依赖
 npm install
-```
 
-### 2. Start
-
-```bash
-npm start
-```
-
-Open `http://localhost:3000` in your browser.
-
-### 3. Collaborate
-
-Everyone on the same LAN opens the same URL, turns on **LAN Mode**, and they'll automatically discover each other within 5 minutes.
-
----
-
-## 🧪 Testing on One Machine
-
-Run two instances to simulate two computers:
-
-```bash
-# Terminal 1 — User A
+# 启动服务（默认端口 3000）
 node server.js
 
-# Terminal 2 — User B (auto-joins A)
-node server.js --port 3001 --join localhost:3000
+# 或指定端口
+node server.js --port 8080
 ```
 
-Then open:
-- **http://localhost:3000** → User A
-- **http://localhost:3001** → User B
+浏览器打开 `http://localhost:3000`，多台电脑在同一局域网下自动发现。
 
-### One-click scripts
-
-| OS | Command |
-|---|---|
-| Windows | `test.bat` |
-| macOS / Linux | `./test.sh` |
-
----
-
-## 🏗 Architecture
-
-```
-Computer A                        Computer B
-┌──────────────────┐             ┌──────────────────┐
-│  Browser ←WS→    │             │  Browser ←WS→    │
-│  Node.js Server  │◄───UDP─────►│  Node.js Server  │
-│  (port 3000)     │◄───WS──────►│  (port 3000)     │
-└──────────────────┘             └──────────────────┘
-       ↕ Socket.IO                      ↕ Socket.IO
-    Script / Mindmap / Story       Script / Mindmap / Story
-    Chat / Projects / Locks        Chat / Projects / Locks
-```
-
-### Data flow
-
-```
-User edits node → focus-lock (instant broadcast) → everyone sees 🔒
-User saves      → projects-sync (via WS bridge)  → peer servers merge
-Real-time edits → realtime event (with dedup)    → all browsers update
-```
-
-### Conflict resolution
-
-| Scenario | Handling |
-|---|---|
-| A edits node, B clicks same node | B sees 🔒 lock, edit blocked |
-| A & B click simultaneously | Server: first wins, second sees lock |
-| A disconnects mid-edit | Server auto-releases all A's locks |
-
----
-
-## 🗂 Project Structure
+## 🏗 项目结构
 
 ```
 collab-studio/
-├── server.js                # Express + Socket.IO + UDP discovery + bridge
-├── package.json
-├── test.bat / test.sh       # One-click local test scripts
-├── public/
-│   ├── index.html           # Main entry — 5-panel navigation
-│   ├── style.css            # Dark theme UI
-│   ├── app.js               # Router, projects, device management, chat
-│   ├── script-editor.js     # Screenplay editor (acts/scenes/dialogues)
-│   ├── mindmap.js           # Mind map engine (bezier/gradients/zoom)
-│   ├── mindmap-full.html    # Fullscreen mind map page
-│   ├── story-editor.js      # Story editor (chapters/content)
-│   └── devices.js           # Device list & notes
+├── server.js              # 主服务端 (Express + Socket.IO + UDP)
+├── services/              # 业务逻辑
+│   ├── auth.js            # 用户认证
+│   ├── project.js         # 项目管理 CRUD
+│   ├── annotation.js      # 批注系统
+│   └── logger.js          # 审计日志
+├── utils/
+│   ├── persist.js         # JSON 原子读写
+│   └── ratelimit.js       # 滑动窗口限流
+├── public/                # 前端静态文件
+│   ├── index.html         # 主应用壳
+│   ├── app.js             # 面板路由 + Socket 事件
+│   ├── login.html         # 登录页
+│   ├── mindmap.js         # 思维导图引擎
+│   ├── script-editor.js   # 剧本编辑器
+│   ├── story-editor.js    # 故事编辑器
+│   ├── fenjing/           # 分镜 Vue3 SPA
+│   └── style.css          # 全局样式
+├── data/                  # 运行时数据 (不提交 git)
+├── docs/                  # 文档
+└── Dockerfile             # Docker 部署
 ```
 
----
+## 🔐 安全
 
-## ⌨️ Mind Map Shortcuts
-
-| Key | Action |
-|---|---|
-| `Tab` | Add child node |
-| `Enter` | Add sibling node |
-| `Delete` / `Backspace` | Delete selected node(s) |
-| `Space` / `F2` | Edit node text |
-| `Shift + Click` | Multi-select |
-| `Ctrl + Scroll` | Zoom in/out |
-| `Drag (background)` | Pan canvas |
-
----
-
-## 🌐 Multi-Computer LAN
-
-Real multi-computer collaboration uses **UDP broadcast** for discovery:
-
-1. Every server broadcasts a `discover` packet to `255.255.255.255:41234` every 5s
-2. Other servers reply with `hello` containing their server ID and name
-3. **Arbitration**: lower server ID initiates the WebSocket bridge connection
-4. Once connected, all state stays in sync via the bridge
-
-No router configuration needed — UDP broadcast works on any typical LAN.
-
----
+- 所有密码经 bcryptjs 哈希存储
+- Helmet 安全头 + 输入校验 + 路径穿越防护
+- 三级频率限制 (per-IP / per-user / per-fingerprint)
+- `data/` 目录运行时权限 700
 
 ## 📄 License
 
-MIT — feel free to use, modify, and share.
-
----
-
-## 🌐 Bilingual UI
-
-Toggle between **中文** and **English** with the language button in the top-right corner. Settings are saved to localStorage.
-
----
-
-**Made with ❤️ for creative teams who work together in the same room.**
+MIT
