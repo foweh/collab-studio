@@ -196,42 +196,66 @@
     loginBtn.parentNode.insertBefore(statusEl, loginBtn.nextSibling);
 
     let connected = false;
+    let serverDown = false; // 服务器是否主动关闭了
 
     socket.on('connect', () => {
       connected = true;
-      statusEl.textContent = '已连接';
-      statusEl.style.color = 'var(--success, #4caf50)';
-      loginBtn.disabled = false;
+      if (serverDown) {
+        // 服务器恢复了！
+        serverDown = false;
+        statusEl.textContent = '✅ 服务器已恢复，可以登录';
+        statusEl.style.color = 'var(--success, #4caf50)';
+        loginBtn.disabled = false;
+        loginError.style.display = 'none';
+        loginError.textContent = '';
+      } else {
+        statusEl.textContent = '已连接';
+        statusEl.style.color = 'var(--success, #4caf50)';
+        loginBtn.disabled = false;
+      }
     });
 
     socket.on('disconnect', () => {
       connected = false;
-      statusEl.textContent = '连接已断开，正在重连...';
+      if (serverDown) {
+        statusEl.textContent = '服务器已断开，继续检测中...';
+      } else {
+        statusEl.textContent = '连接已断开，正在重连...';
+      }
       statusEl.style.color = 'var(--danger, #f44336)';
       loginBtn.disabled = true;
     });
 
     socket.on('connect_error', () => {
       connected = false;
-      statusEl.textContent = '连接失败，请确认服务器已启动';
+      if (serverDown) {
+        statusEl.textContent = '服务器未响应，继续检测中...';
+      } else {
+        statusEl.textContent = '连接失败，请确认服务器已启动';
+      }
       statusEl.style.color = 'var(--danger, #f44336)';
-      loginBtn.disabled = false;
+      loginBtn.disabled = !serverDown;
     });
 
-    // ── 服务器关闭 → 停止重连 ──
+    // ── 服务器关闭 → 开启持续检测模式 ──
     socket.on('server-shutdown', ({ reason }) => {
       connected = false;
-      statusEl.textContent = '服务器已停止运行';
-      statusEl.style.color = 'var(--danger, #f44336)';
+      serverDown = true;
+      statusEl.textContent = '🔌 服务器已停止，正在持续检测...';
+      statusEl.style.color = '#ff9800';
       loginBtn.disabled = true;
-      socket.io.opts.reconnection = false;
-      socket.disconnect();
-      showError('服务器已停止运行，请稍后刷新页面重试');
+      // 开启无限重连，不停检测直到服务器恢复
+      socket.io.opts.reconnection = true;
+      socket.io.opts.reconnectionAttempts = Infinity;
+      socket.io.opts.reconnectionDelay = 2000;
+      socket.io.opts.reconnectionDelayMax = 5000;
+      loginError.textContent = '';
+      loginError.style.display = 'none';
     });
 
-    // 3秒超时检测
+    // 初始超时检测
     setTimeout(() => {
-      if (!connected) {
+      if (!connected && !serverDown) {
         statusEl.textContent = '连接超时，请检查服务器是否运行';
         statusEl.style.color = 'var(--danger, #f44336)';
         loginBtn.disabled = false;
