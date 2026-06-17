@@ -156,6 +156,7 @@
       let fenjingSocket = null;
       let localShots = [];           // shots 本地副本，与服务器同步
       let localScenes = [];          // scenes 本地副本
+      let localVersion = 0;          // 本地跟踪的 _version，用于乐观并发控制
       let lockedShots = {};          // 被其他人锁定的镜头 { shotId: { user, shotNum } }
 
       function connectFenjing() {
@@ -172,7 +173,8 @@
         fenjingSocket.on('fenjing:state-sync', (state) => {
           localShots = state.shots || [];
           localScenes = state.scenes || [];
-          console.log('[绘画] 收到初始状态，shots:', localShots.length, 'scenes:', localScenes.length);
+          localVersion = state._version || 0;
+          console.log('[绘画] 收到初始状态，shots:', localShots.length, 'scenes:', localScenes.length, 'version:', localVersion);
         });
 
         fenjingSocket.on('fenjing:shots-update', (shots) => {
@@ -183,6 +185,49 @@
         fenjingSocket.on('fenjing:scenes-update', (scenes) => {
           localScenes = scenes;
           console.log('[绘画] 收到 scenes-update, 数量:', scenes.length);
+        });
+
+        // ── 单镜头更新（接收其他客户端的镜头级变更） ──
+        fenjingSocket.on('fenjing:shot-updated', ({ shotId, patch, version }) => {
+          if (version) localVersion = version;
+          const shot = localShots.find(s => s.id === shotId);
+          if (shot) {
+            Object.assign(shot, patch);
+            updateShotImageInDOM(shot);
+          }
+          // 清除已确认的待处理 patch
+          if (window.__pendingPatches) {
+            for (const key of Object.keys(window.__pendingPatches)) {
+              if (key.startsWith(shotId + ':')) delete window.__pendingPatches[key];
+            }
+          }
+          console.log('[绘画] 收到 shot-updated:', shotId, patch);
+        });
+
+        // ── 镜头更新被拒绝（版本冲突） → 自动同步 + 重试 ──
+        fenjingSocket.on('fenjing:shot-update-rejected', ({ currentState, reason, expectedVersion }) => {
+          if (reason === 'version_mismatch' && currentState) {
+            console.log('[绘画] shot-update 版本冲突，同步最新状态, 期望版本:', expectedVersion);
+            localShots = currentState.shots || localShots;
+            localScenes = currentState.scenes || localScenes;
+            localVersion = currentState._version || expectedVersion;
+            document.querySelectorAll('.shot-row').forEach(refreshShotRow);
+            // 自动重试待处理 patch（如图片URL还未应用）
+            if (window.__pendingPatches) {
+              for (const key of Object.keys(window.__pendingPatches)) {
+                const p = window.__pendingPatches[key];
+                if (p.retries < 3) {
+                  p.retries++;
+                  console.log('[绘画] 自动重试 shot-update:', p.shotId, '第', p.retries, '次');
+                  fenjingSocket.emit('fenjing:shot-update', {
+                    shotId: p.shotId,
+                    patch: p.patch,
+                    baseVersion: localVersion
+                  });
+                }
+              }
+            }
+          }
         });
 
         // ── 镜头编辑锁 ──
@@ -475,9 +520,11 @@
         }
         const dataUrl = canvas.toDataURL('image/png');
         console.log('[绘画] 保存到镜头', currentShotId, '图片大小:', (dataUrl.length / 1024).toFixed(0) + 'KB');
+        // 记录当前版本（用于后续版本检查）
+        const uploadBaseVersion = localVersion;
         // 先关闭面板（不影响用户体验）
         closeDrawPanel();
-        // 异步上传图片到服务器
+        // 异步上传图片到服务器（HTTP，不阻塞Socket.IO同步）
         fetch('/api/fenjing/upload-image', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -493,10 +540,18 @@
               shot.image = resp.url;
               // 更新DOM中的图片
               updateShotImageInDOM(shot);
-              // 发送轻量级更新（只含URL，不含base64数据）
+              // 使用版本化的单镜头更新（仅发送URL，不含base64数据）
               if (fenjingSocket && fenjingSocket.connected) {
-                fenjingSocket.emit('fenjing:shots-update', localShots);
-                console.log('[绘画] 已发送 lightweight fenjing:shots-update');
+                // 注册待处理 patch（用于版本冲突时自动重试）
+                if (!window.__pendingPatches) window.__pendingPatches = {};
+                const patchKey = currentShotId + ':image';
+                window.__pendingPatches[patchKey] = { shotId: currentShotId, patch: { image: resp.url }, retries: 0 };
+                fenjingSocket.emit('fenjing:shot-update', {
+                  shotId: currentShotId,
+                  patch: { image: resp.url },
+                  baseVersion: uploadBaseVersion
+                });
+                console.log('[绘画] 已发送版本化 shot-update, baseVersion:', uploadBaseVersion);
               }
             }
           } else {
@@ -517,7 +572,12 @@
         shot.image = dataUrl;
         updateShotImageInDOM(shot);
         if (fenjingSocket && fenjingSocket.connected) {
-          fenjingSocket.emit('fenjing:shots-update', localShots);
+          // 内联保存也使用版本化更新
+          fenjingSocket.emit('fenjing:shot-update', {
+            shotId: currentShotId,
+            patch: { image: dataUrl },
+            baseVersion: localVersion
+          });
         }
       }
 
@@ -877,10 +937,13 @@
       document.addEventListener('click', () => { ctxMenu.style.display = 'none'; ctxShotRow = null; });
       document.addEventListener('contextmenu', () => { ctxMenu.style.display = 'none'; });
 
-      // 辅助：发送 shots 更新
+      // 辅助：发送 shots 更新（带版本号，防冲突）
       function emitShotsUpdate() {
         if (fenjingSocket && fenjingSocket.connected) {
-          fenjingSocket.emit('fenjing:shots-update', localShots);
+          // 在 shots 数组上附加版本号（服务端会检测）
+          const payload = localShots.slice(); // 浅拷贝避免污染
+          payload._baseVersion = localVersion;
+          fenjingSocket.emit('fenjing:shots-update', payload);
         }
       }
 

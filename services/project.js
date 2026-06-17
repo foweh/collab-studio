@@ -45,6 +45,7 @@ function saveProjects() {
     owner: p.owner, parentId: p.parentId || undefined,
     deleted: p.deleted || undefined, deletedAt: p.deletedAt || undefined,
     visibility: p.visibility || 'private',
+    _version: p._version || 0,
   }));
   saveJSON(PROJECTS_FILE, data);
 }
@@ -106,6 +107,7 @@ function createProject(type, name, data, owner) {
     createdAt: Date.now(), updatedAt: Date.now(),
     owner: owner || 'unknown',
     visibility: 'private',
+    _version: 0,
   };
   projects.push(p);
   saveProjects();
@@ -121,6 +123,7 @@ function updateProject(id, updates) {
     p.data = updates.data;
   }
   p.updatedAt = Date.now();
+  p._version = (p._version || 0) + 1;
   saveProjects();
   return p;
 }
@@ -227,8 +230,22 @@ function redoProjectOp(projectId, userName) {
 function mergeProjects(remoteList) {
   remoteList.forEach(rp => {
     const local = projects.find(p => p.id === rp.id);
-    if (!local) projects.push({ ...rp });
-    else if (rp.updatedAt > local.updatedAt) Object.assign(local, rp);
+    if (!local) {
+      projects.push({ ...rp, _version: rp._version || 0 });
+    } else {
+      const remoteVer = rp._version || 0;
+      const localVer = local._version || 0;
+      if (remoteVer > localVer) {
+        // 远端版本更新 → 完全替换（last-writer-wins with version）
+        Object.assign(local, rp);
+        local._version = remoteVer;
+      } else if (remoteVer === localVer && rp.updatedAt > local.updatedAt) {
+        // 同版本但更新时间不同 → 按时间戳
+        Object.assign(local, rp);
+        local._version = localVer + 1;
+      }
+      // remoteVer < localVer：本地版本更新，忽略远端变更
+    }
   });
 }
 

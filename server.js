@@ -894,7 +894,7 @@ io.on('connection', (socket) => {
   });
 
   // ── 重命名项目 ──
-  socket.on('project-rename', ({ id, name }) => {
+  socket.on('project-rename', ({ id, name, baseVersion }) => {
     if (!validateString(name, 50) || !name.trim()) { socket.emit('project-update-error', '名称无效'); return; }
     const p = projects.find(x => x.id === id);
     if (!p) return;
@@ -903,8 +903,14 @@ io.on('connection', (socket) => {
       socket.emit('project-update-error', '项目名称已存在');
       return;
     }
+    // 版本检查
+    if (baseVersion !== undefined && baseVersion !== (p._version || 0)) {
+      socket.emit('project-update-error', '版本冲突：请刷新后重试');
+      return;
+    }
     p.name = name.trim();
     p.updatedAt = Date.now();
+    p._version = (p._version || 0) + 1;
     projectSvc.saveProjects();
     broadcastProjectUpdateToAll(p.id, socket.id);
     broadcastToPeers({ type: 'projects-sync', projects: projects.map(x => ({...x})) }, null);
@@ -938,11 +944,20 @@ io.on('connection', (socket) => {
       socket.emit('project-update-error', '你没有修改此项目的权限');
       return;
     }
+    // 乐观并发控制：检查 baseVersion
+    const baseVersion = data.baseVersion !== undefined ? data.baseVersion : undefined;
+    const currentVersion = p._version || 0;
+    if (baseVersion !== undefined && baseVersion !== currentVersion) {
+      socket.emit('project-update-error', '版本冲突：此项目已被其他人修改，请刷新后重试');
+      socket.emit('project-update-rejected', { projectId: p.id, reason: 'version_mismatch', expectedVersion: currentVersion, currentState: p });
+      return;
+    }
     // 保存快照用于撤回
     const before = JSON.parse(JSON.stringify(p.data || {}));
     if (data.name !== undefined) p.name = data.name;
     if (data.data !== undefined) p.data = data.data;
     p.updatedAt = Date.now();
+    p._version = (p._version || 0) + 1;
     // 广播给所有有权限的在线用户（排除发送者）
     broadcastProjectUpdateToAll(p.id, socket.id);
     addLog(socket.id, socket.userName || SERVER_NAME, 'updated', p.type, p.name);
@@ -1805,24 +1820,37 @@ function handleBridgeMessage(fromId, msg) {
         break;
       case 'fenjing-sync':
         if (msg.state) {
-          fenjingState = msg.state;
-          fenjingNsp.emit('fenjing:state-sync', fenjingState);
-          saveFenjingState(fenjingState);
-          // 同步项目列表
-          if (msg.projectMeta) {
-            fenjingProjectMeta = msg.projectMeta;
-            saveFenjingProjectsMeta(fenjingProjectMeta);
-            // 同步每个项目的数据
-            if (msg.projectMeta.projects) {
-              msg.projectMeta.projects.forEach(p => {
-                const data = getFenjingProjectData(p.id);
-                if (!data) {
-                  saveFenjingProjectData(p.id, { projectName: p.name || '未命名项目', scenes: [], shots: [] });
-                }
-              });
+          // 通过写队列串行化，避免与 shot-update 等本地操作竞争
+          const stateKey = 'fenjing:' + (fenjingProjectMeta.activeId || 'default');
+          enqueueWrite(stateKey, () => {
+            // 如果传入的版本比本地旧，忽略（本地已有更新版本）
+            const incomingVersion = msg.state._version || 0;
+            const localVersion = fenjingState._version || 0;
+            if (incomingVersion < localVersion) {
+              // 本地状态更新，回传本地版本给对方
+              broadcastToPeers({ type: 'fenjing-sync', state: fenjingState, projectMeta: fenjingProjectMeta }, null);
+              return;
             }
-            broadcastFenjingProjectsSync();
-          }
+            fenjingState = msg.state;
+            if (fenjingState._version === undefined) fenjingState._version = incomingVersion;
+            fenjingNsp.emit('fenjing:state-sync', fenjingState);
+            saveCurrentFenjingState();
+            // 同步项目列表
+            if (msg.projectMeta) {
+              fenjingProjectMeta = msg.projectMeta;
+              saveFenjingProjectsMeta(fenjingProjectMeta);
+              // 同步每个项目的数据
+              if (msg.projectMeta.projects) {
+                msg.projectMeta.projects.forEach(p => {
+                  const data = getFenjingProjectData(p.id);
+                  if (!data) {
+                    saveFenjingProjectData(p.id, { projectName: p.name || '未命名项目', scenes: [], shots: [], _version: 0 });
+                  }
+                });
+              }
+              broadcastFenjingProjectsSync();
+            }
+          });
           broadcastToPeers(msg, fromId);
         }
         break;
@@ -1856,10 +1884,20 @@ function broadcastPeers() {
   broadcastToBrowsers({ type: 'peers-update', peers: list });
 }
 
+// ── 写序列化锁（按ID串行执行写入，消除文件级竞态） ──
+const writeQueues = new Map();
+function enqueueWrite(key, fn) {
+  const prev = writeQueues.get(key) || Promise.resolve();
+  const next = prev.then(fn).catch(err => { console.error(`[写队列 ${key}]`, err); });
+  writeQueues.set(key, next);
+  return next;
+}
+
 // ─── 分镜工具 namespace ────────────────────────────────────
 const fenjingNsp = io.of('/fenjing');
 // 当前活动的分镜状态（向后兼容）
-let fenjingState = loadFenjingState() || { projectName: '未命名项目', scenes: [], shots: [] };
+let fenjingState = loadFenjingState() || { projectName: '未命名项目', scenes: [], shots: [], _version: 0 };
+if (fenjingState._version === undefined) fenjingState._version = 0;
 // 多项目支持：元数据（项目列表）和每个项目的数据存储
 let fenjingProjectMeta = loadFenjingProjectsMeta() || { projects: [], activeId: '' };
 
@@ -1900,38 +1938,112 @@ fenjingNsp.on('connection', (socket) => {
   // 向后兼容：也发送当前状态
   socket.emit('fenjing:state-sync', fenjingState);
 
-  // ── 镜头更新 ──
-  socket.on('fenjing:shots-update', (shots) => {
+  // ── 单镜头更新（版本化，防冲突） ──
+  // 客户端传 {shotId, patch, baseVersion}，只更新单个镜头的指定字段
+  // 不同镜头的更新自动共存，同一镜头通过 baseVersion 检测冲突
+  socket.on('fenjing:shot-update', ({ shotId, patch, baseVersion }) => {
+    if (!shotId || !patch || typeof patch !== 'object') return;
+    const stateKey = 'fenjing:' + (fenjingProjectMeta.activeId || 'default');
+    enqueueWrite(stateKey, () => {
+      const currentVersion = fenjingState._version || 0;
+      if (baseVersion !== undefined && baseVersion !== currentVersion) {
+        // 版本冲突 → 拒绝，返回当前状态让客户端 rebase
+        socket.emit('fenjing:shot-update-rejected', {
+          currentState: {
+            projectName: fenjingState.projectName,
+            scenes: fenjingState.scenes,
+            shots: fenjingState.shots,
+            _version: fenjingState._version
+          },
+          reason: 'version_mismatch',
+          expectedVersion: currentVersion
+        });
+        return;
+      }
+      // 查找或创建镜头
+      let shot = fenjingState.shots.find(s => s.id === shotId);
+      if (!shot) {
+        const maxOrder = fenjingState.shots.reduce((max, s) => Math.max(max, s.order || 0), 0);
+        shot = { id: shotId, order: maxOrder + 1, number: fenjingState.shots.length + 1 };
+        fenjingState.shots.push(shot);
+      }
+      // 只合并白名单字段
+      const allowedFields = ['image','content','description','duration','transition','audio','camera','action','note','order','number','type','title'];
+      Object.keys(patch).forEach(k => {
+        if (allowedFields.includes(k)) shot[k] = patch[k];
+      });
+      fenjingState._version = (fenjingState._version || 0) + 1;
+      saveCurrentFenjingState();
+      socket.broadcast.emit('fenjing:shot-updated', { shotId, patch, version: fenjingState._version });
+      broadcastFenjingProjectsSync();
+      broadcastToPeers({ type: 'fenjing-sync', state: fenjingState, projectMeta: fenjingProjectMeta }, null);
+    });
+  });
+
+  // ── 镜头批量更新（含版本检查） ──
+  socket.on('fenjing:shots-update', (shots, ack) => {
     if (!Array.isArray(shots) || shots.length > 10000) return;
-    fenjingState.shots = shots;
-    socket.broadcast.emit('fenjing:shots-update', shots);
-    saveCurrentFenjingState();
-    broadcastFenjingProjectsSync();
-    broadcastToPeers({ type: 'fenjing-sync', state: fenjingState, projectMeta: fenjingProjectMeta }, null);
+    const baseVersion = (shots._baseVersion !== undefined) ? shots._baseVersion : undefined;
+    const stateKey = 'fenjing:' + (fenjingProjectMeta.activeId || 'default');
+    enqueueWrite(stateKey, () => {
+      const currentVersion = fenjingState._version || 0;
+      if (baseVersion !== undefined && baseVersion !== currentVersion) {
+        if (ack) ack({ rejected: true, reason: 'version_mismatch', expectedVersion: currentVersion, currentState: fenjingState });
+        return;
+      }
+      fenjingState.shots = shots;
+      fenjingState._version = (fenjingState._version || 0) + 1;
+      saveCurrentFenjingState();
+      socket.broadcast.emit('fenjing:shots-update', fenjingState.shots);
+      broadcastFenjingProjectsSync();
+      broadcastToPeers({ type: 'fenjing-sync', state: fenjingState, projectMeta: fenjingProjectMeta }, null);
+      if (ack) ack({ accepted: true, version: fenjingState._version });
+    });
   });
 
-  // ── 场景更新 ──
-  socket.on('fenjing:scenes-update', (scenes) => {
+  // ── 场景更新（含版本检查） ──
+  socket.on('fenjing:scenes-update', (scenes, ack) => {
     if (!Array.isArray(scenes) || scenes.length > 1000) return;
-    fenjingState.scenes = scenes;
-    socket.broadcast.emit('fenjing:scenes-update', scenes);
-    saveCurrentFenjingState();
-    broadcastFenjingProjectsSync();
-    broadcastToPeers({ type: 'fenjing-sync', state: fenjingState, projectMeta: fenjingProjectMeta }, null);
+    const baseVersion = (scenes._baseVersion !== undefined) ? scenes._baseVersion : undefined;
+    const stateKey = 'fenjing:' + (fenjingProjectMeta.activeId || 'default');
+    enqueueWrite(stateKey, () => {
+      const currentVersion = fenjingState._version || 0;
+      if (baseVersion !== undefined && baseVersion !== currentVersion) {
+        if (ack) ack({ rejected: true, reason: 'version_mismatch', expectedVersion: currentVersion, currentState: fenjingState });
+        return;
+      }
+      fenjingState.scenes = scenes;
+      fenjingState._version = (fenjingState._version || 0) + 1;
+      saveCurrentFenjingState();
+      socket.broadcast.emit('fenjing:scenes-update', fenjingState.scenes);
+      broadcastFenjingProjectsSync();
+      broadcastToPeers({ type: 'fenjing-sync', state: fenjingState, projectMeta: fenjingProjectMeta }, null);
+      if (ack) ack({ accepted: true, version: fenjingState._version });
+    });
   });
 
-  // ── 项目重命名 ──
-  socket.on('fenjing:project-rename', (name) => {
+  // ── 项目重命名（含版本检查） ──
+  socket.on('fenjing:project-rename', (data) => {
+    const name = typeof data === 'string' ? data : (data && data.name);
+    const baseVersion = (data && data.baseVersion !== undefined) ? data.baseVersion : undefined;
     if (!validateString(name, 100)) return;
-    fenjingState.projectName = name;
-    // 在项目列表中也更新
-    const target = fenjingProjectMeta.projects.find(p => p.id === fenjingProjectMeta.activeId);
-    if (target) target.name = name;
-    saveFenjingProjectsMeta(fenjingProjectMeta);
-    socket.broadcast.emit('fenjing:project-rename', name);
-    saveCurrentFenjingState();
-    broadcastFenjingProjectsSync();
-    broadcastToPeers({ type: 'fenjing-sync', state: fenjingState, projectMeta: fenjingProjectMeta }, null);
+    const stateKey = 'fenjing:' + (fenjingProjectMeta.activeId || 'default');
+    enqueueWrite(stateKey, () => {
+      const currentVersion = fenjingState._version || 0;
+      if (baseVersion !== undefined && baseVersion !== currentVersion) {
+        socket.emit('fenjing:update-rejected', { reason: 'version_mismatch', expectedVersion: currentVersion });
+        return;
+      }
+      fenjingState.projectName = name;
+      const target = fenjingProjectMeta.projects.find(p => p.id === fenjingProjectMeta.activeId);
+      if (target) target.name = name;
+      saveFenjingProjectsMeta(fenjingProjectMeta);
+      fenjingState._version = (fenjingState._version || 0) + 1;
+      saveCurrentFenjingState();
+      socket.broadcast.emit('fenjing:project-rename', name);
+      broadcastFenjingProjectsSync();
+      broadcastToPeers({ type: 'fenjing-sync', state: fenjingState, projectMeta: fenjingProjectMeta }, null);
+    });
   });
 
   // ── 项目创建（来自SPA的 localStorage 项目同步到服务器） ──
@@ -1946,7 +2058,7 @@ fenjingNsp.on('connection', (socket) => {
     // 创建项目数据（空状态）
     saveFenjingProjectData(id, { projectName: name || '未命名项目', scenes: [], shots: [] });
     // 更新当前状态
-    fenjingState = { projectName: name || '未命名项目', scenes: [], shots: [] };
+    fenjingState = { projectName: name || '未命名项目', scenes: [], shots: [], _version: 0 };
     saveFenjingState(fenjingState);
     // 广播
     broadcastFenjingProjectsSync();
@@ -1962,7 +2074,7 @@ fenjingNsp.on('connection', (socket) => {
     // 加载项目数据
     const data = getFenjingProjectData(id);
     if (data) {
-      fenjingState = { projectName: data.projectName || '未命名项目', scenes: data.scenes || [], shots: data.shots || [] };
+      fenjingState = { projectName: data.projectName || '未命名项目', scenes: data.scenes || [], shots: data.shots || [], _version: data._version || 0 };
     }
     saveFenjingState(fenjingState);
     // 通知所有客户端切换到该项目
@@ -1997,10 +2109,11 @@ fenjingNsp.on('connection', (socket) => {
       }
     }
     if (targetItem && targetItem.type === 'storyboard') {
-      fenjingState = JSON.parse(JSON.stringify(targetItem.data || { projectName: targetItem.name, scenes: [], shots: [] }));
+      fenjingState = JSON.parse(JSON.stringify(targetItem.data || { projectName: targetItem.name, scenes: [], shots: [], _version: 0 }));
       fenjingState.projectName = fenjingState.projectName || targetItem.name;
+      if (fenjingState._version === undefined) fenjingState._version = 0;
     } else {
-      fenjingState = { projectName: '未命名项目', scenes: [], shots: [] };
+      fenjingState = { projectName: '未命名项目', scenes: [], shots: [], _version: 0 };
     }
     fenjingNsp.emit('fenjing:state-sync', fenjingState);
     broadcastFenjingProjectsSync();
