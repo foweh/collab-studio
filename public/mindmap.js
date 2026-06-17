@@ -1279,7 +1279,16 @@ document.addEventListener('keydown', (e) => {
 document.getElementById('mm-add-root').addEventListener('click', () => {
   pushUndo();
   const id = addNodeInternal('中心主题', COLORS[0]);
-  autoLayout();
+  const newNode = nodes.find(n => n.id === id);
+  if (newNode) {
+    const nw = newNode.width || NODE_MIN_W;
+    const nh = newNode.height || NODE_H;
+    // 放在当前视口中心（世界坐标），不干扰已有节点的位置
+    const vpCenter = screenToWorld(canvas.width / 2, canvas.height / 2);
+    const spot = findVacantSpot(vpCenter.x - nw / 2, vpCenter.y - nh / 2, nw, nh, id);
+    newNode.x = spot.x;
+    newNode.y = spot.y;
+  }
   selectedIds.clear(); selectedIds.add(id);
   render(); saveData();
 });
