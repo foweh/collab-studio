@@ -583,6 +583,147 @@ canvas.addEventListener('wheel', onWheel, { passive: false });
 canvas.addEventListener('dblclick', onDblClick);
 canvas.addEventListener('contextmenu', onContextMenu);
 
+// ─── 触屏事件（手机端支持） ──────────────────────────────
+canvas.addEventListener('touchstart', onTouchStart, { passive: false });
+canvas.addEventListener('touchmove', onTouchMove, { passive: false });
+canvas.addEventListener('touchend', onTouchEnd);
+canvas.addEventListener('touchcancel', onTouchEnd);
+
+let touchState = {
+  active: false, startTime: 0,
+  startX: 0, startY: 0, lastX: 0, lastY: 0,
+  nodeId: null, isPan: false,
+  pinchStartDist: 0, pinchStartZoom: 0,
+  pinchCenterX: 0, pinchCenterY: 0,
+  longPressTimer: null, longPressFired: false,
+  taps: 0, tapTimer: null,
+};
+
+function onTouchStart(e) {
+  if (e.touches.length === 1) {
+    const t = e.touches[0];
+    const rect = canvas.getBoundingClientRect();
+    const sx = t.clientX - rect.left, sy = t.clientY - rect.top;
+    touchState.active = true;
+    touchState.startTime = Date.now();
+    touchState.startX = sx; touchState.startY = sy;
+    touchState.lastX = sx; touchState.lastY = sy;
+    touchState.nodeId = null; touchState.isPan = false;
+    touchState.longPressFired = false;
+    touchState.pinchStartDist = 0;
+
+    const hit = hitTest(sx, sy);
+    if (hit) {
+      touchState.nodeId = hit.id;
+      if (!selectedIds.has(hit.id)) {
+        selectedIds.clear(); selectedIds.add(hit.id); render(); onSelectionChanged();
+      }
+      drag.active = true; drag.nodeId = hit.id; drag.type = 'node';
+      const ws = worldToScreen(hit.x, hit.y);
+      drag.offX = sx - ws.x; drag.offY = sy - ws.y;
+    } else {
+      touchState.isPan = true;
+      pan.active = true; pan.startX = sx; pan.startY = sy;
+      pan.camX = camera.x; pan.camY = camera.y;
+      clearTimeout(touchState.longPressTimer);
+      touchState.longPressTimer = setTimeout(() => {
+        touchState.longPressFired = true;
+        onContextMenu(e);
+      }, 600);
+    }
+    e.preventDefault();
+  } else if (e.touches.length === 2) {
+    clearTimeout(touchState.longPressTimer);
+    touchState.pinchStartDist = Math.hypot(
+      e.touches[0].clientX - e.touches[1].clientX,
+      e.touches[0].clientY - e.touches[1].clientY
+    );
+    touchState.pinchStartZoom = camera.zoom;
+    const rect = canvas.getBoundingClientRect();
+    touchState.pinchCenterX = (e.touches[0].clientX + e.touches[1].clientX) / 2 - rect.left;
+    touchState.pinchCenterY = (e.touches[0].clientY + e.touches[1].clientY) / 2 - rect.top;
+    drag.active = false; pan.active = false;
+    e.preventDefault();
+  }
+}
+
+function onTouchMove(e) {
+  e.preventDefault();
+  if (e.touches.length === 2 && touchState.pinchStartDist > 0) {
+    const dist = Math.hypot(
+      e.touches[0].clientX - e.touches[1].clientX,
+      e.touches[0].clientY - e.touches[1].clientY
+    );
+    const scale = dist / touchState.pinchStartDist;
+    const newZoom = Math.max(0.2, Math.min(3, touchState.pinchStartZoom * scale));
+    const oldZoom = camera.zoom;
+    camera.zoom = newZoom;
+    camera.x = touchState.pinchCenterX - (touchState.pinchCenterX - camera.x) * (newZoom / oldZoom);
+    camera.y = touchState.pinchCenterY - (touchState.pinchCenterY - camera.y) * (newZoom / oldZoom);
+    render(); return;
+  }
+  if (e.touches.length !== 1) return;
+  const t = e.touches[0];
+  const rect = canvas.getBoundingClientRect();
+  const sx = t.clientX - rect.left, sy = t.clientY - rect.top;
+  const moveDist = Math.hypot(sx - touchState.startX, sy - touchState.startY);
+  if (moveDist > 8) clearTimeout(touchState.longPressTimer);
+
+  if (touchState.nodeId && drag.active) {
+    const wPos = screenToWorld(sx - drag.offX, sy - drag.offY);
+    const node = nodes.find(n => n.id === drag.nodeId);
+    if (node) {
+      const dx = wPos.x - node.x, dy = wPos.y - node.y;
+      for (const id of selectedIds) {
+        const n = nodes.find(nd => nd.id === id);
+        if (n) { n.x += dx; n.y += dy; }
+      }
+      render();
+    }
+  } else if (touchState.isPan && pan.active) {
+    camera.x = pan.camX + (sx - pan.startX);
+    camera.y = pan.camY + (sy - pan.startY);
+    render();
+  }
+  touchState.lastX = sx; touchState.lastY = sy;
+}
+
+function onTouchEnd(e) {
+  clearTimeout(touchState.longPressTimer);
+  if (drag.active && touchState.nodeId) saveData();
+  drag.active = false; drag.nodeId = null;
+  pan.active = false;
+
+  const moveDist = Math.hypot(
+    (touchState.lastX || 0) - touchState.startX,
+    (touchState.lastY || 0) - touchState.startY
+  );
+  const duration = Date.now() - touchState.startTime;
+
+  if (!touchState.longPressFired && duration < 300 && moveDist < 8) {
+    const sx = touchState.startX, sy = touchState.startY;
+    const hit = hitTest(sx, sy);
+    if (hit) {
+      touchState.taps++;
+      if (touchState.taps === 1) {
+        selectedIds.clear(); selectedIds.add(hit.id); render(); onSelectionChanged();
+        touchState.tapTimer = setTimeout(() => { touchState.taps = 0; }, 400);
+      } else if (touchState.taps >= 2) {
+        clearTimeout(touchState.tapTimer);
+        touchState.taps = 0;
+        startEditing(hit);
+      }
+    } else {
+      touchState.taps = 0;
+      selectedIds.clear(); render(); onSelectionChanged();
+    }
+  }
+
+  touchState.active = false;
+  touchState.nodeId = null; touchState.isPan = false;
+  touchState.pinchStartDist = 0;
+}
+
 function onMouseDown(e) {
   const rect = canvas.getBoundingClientRect();
   const sx = e.clientX - rect.left, sy = e.clientY - rect.top;
