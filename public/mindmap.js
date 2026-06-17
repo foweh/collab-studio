@@ -725,6 +725,8 @@ function onTouchEnd(e) {
 }
 
 function onMouseDown(e) {
+  // 右键交给 contextmenu，不干预当前选中（保护 Ctrl+click 多选）
+  if (e.button === 2) return;
   const rect = canvas.getBoundingClientRect();
   const sx = e.clientX - rect.left, sy = e.clientY - rect.top;
 
@@ -1144,7 +1146,7 @@ function deleteSelected() {
   nodes = nodes.filter(n => !toDelete.has(n.id));
   edges = edges.filter(e => !toDelete.has(e.from) && !toDelete.has(e.to));
   selectedIds.clear();
-  autoLayout(); render(); saveData();
+  render(); saveData();
 }
 
 function toggleCollapse(id) {
