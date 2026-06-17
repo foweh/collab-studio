@@ -142,27 +142,16 @@ function applyLang() {
   document.querySelectorAll('[data-i18n-placeholder]').forEach(el => {
     el.placeholder = t(el.dataset.i18nPlaceholder);
   });
+  // Update title
   document.title = t('title');
-  // 更新语言切换按钮文字
-  const btn = document.getElementById('lang-toggle-btn');
-  if (btn) btn.textContent = currentLang === 'zh' ? '🇨🇳 中文' : '🇬🇧 English';
+  // Update lang badge
+  const badge = document.getElementById('lang-badge');
+  if (badge) badge.textContent = currentLang === 'zh' ? '🇨🇳 中文' : '🇬🇧 English';
 }
-
-// 页面加载时应用保存的语言 + 绑定切换按钮
-document.addEventListener('DOMContentLoaded', () => {
-  applyLang();
-  const btn = document.getElementById('lang-toggle-btn');
-  if (btn) btn.addEventListener('click', toggleLang);
-});
 
 // Auto-load saved language
 const savedLang = localStorage.getItem('collab-lang');
 if (savedLang && i18n[savedLang]) currentLang = savedLang;
-
-// 如果 DOM 已就绪（脚本在 body 底部时），立即应用
-if (document.readyState === 'interactive' || document.readyState === 'complete') {
-  applyLang();
-}
 
 // Export for use in other modules
 window.t = t;
