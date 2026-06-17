@@ -180,7 +180,9 @@
   (function() {
     const socket = io({
       transports: ['websocket', 'polling'],
-      reconnectionAttempts: 3,
+      reconnectionAttempts: Infinity,
+      reconnectionDelay: 2000,
+      reconnectionDelayMax: 5000,
       timeout: 5000,
     });
 
@@ -244,11 +246,8 @@
       statusEl.textContent = '🔌 服务器已停止，正在持续检测...';
       statusEl.style.color = '#ff9800';
       loginBtn.disabled = true;
-      // 开启无限重连，不停检测直到服务器恢复
-      socket.io.opts.reconnection = true;
-      socket.io.opts.reconnectionAttempts = Infinity;
-      socket.io.opts.reconnectionDelay = 2000;
-      socket.io.opts.reconnectionDelayMax = 5000;
+      // 强制重启连接循环（如果已断开）
+      if (socket.disconnected) socket.connect();
       loginError.textContent = '';
       loginError.style.display = 'none';
     });
