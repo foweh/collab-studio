@@ -218,6 +218,17 @@
       loginBtn.disabled = false;
     });
 
+    // ── 服务器关闭 → 停止重连 ──
+    socket.on('server-shutdown', ({ reason }) => {
+      connected = false;
+      statusEl.textContent = '服务器已停止运行';
+      statusEl.style.color = 'var(--danger, #f44336)';
+      loginBtn.disabled = true;
+      socket.io.opts.reconnection = false;
+      socket.disconnect();
+      showError('服务器已停止运行，请稍后刷新页面重试');
+    });
+
     // 3秒超时检测
     setTimeout(() => {
       if (!connected) {

@@ -21,7 +21,12 @@ window.registerCollabModule = function(name, api) {
   }
 };
 
-const socket = io();
+const socket = io({
+  reconnection: true,
+  reconnectionAttempts: 5,
+  reconnectionDelay: 1000,
+  reconnectionDelayMax: 5000,
+});
 CollabStudio.socket = socket;
 const fenjingSocket = io('/fenjing');
 
@@ -1018,6 +1023,23 @@ socket.on('login-error', (msg) => {
   sessionStorage.removeItem('collab-auth');
   showAlert(msg, '登录失败', '❌');
   setTimeout(() => { window.location.href = '/'; }, 2000);
+});
+
+// ── 服务器关闭 → 所有客户端立刻踢出 ──
+socket.on('server-shutdown', ({ reason }) => {
+  console.log('[服务端关闭]', reason);
+  showAlert('服务器已停止运行，请稍后重新连接', '服务器已关闭', '🔌');
+  sessionStorage.removeItem('collab-auth');
+  socket.io.opts.reconnection = false;
+  socket.disconnect();
+  app.style.display = 'none';
+  setTimeout(() => { window.location.href = '/'; }, 2000);
+});
+
+socket.on('disconnect', (reason) => {
+  if (reason === 'io server disconnect' && app.style.display !== 'none') {
+    showAlert('与服务器的连接已断开', '连接中断', '🔌');
+  }
 });
 
 socket.on('project-removed', (projectId) => {

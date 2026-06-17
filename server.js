@@ -2253,6 +2253,27 @@ process.on('unhandledRejection', (reason) => {
   console.error('[崩溃] 未处理的 Promise 拒绝:', reason);
 });
 
+// ─── 优雅关闭（踢出所有客户端） ──────────────────────────
+let shuttingDown = false;
+function gracefulShutdown(signal) {
+  if (shuttingDown) return;
+  shuttingDown = true;
+  console.log(`\n[关闭] 收到 ${signal}，正在通知所有客户端...`);
+  io.emit('server-shutdown', { reason: '服务器已停止', timestamp: Date.now() });
+  if (fenjingNsp) fenjingNsp.emit('server-shutdown', { reason: '服务器已停止', timestamp: Date.now() });
+  setTimeout(() => {
+    console.log('[关闭] 断开所有 Socket.IO 连接...');
+    io.disconnectSockets(true);
+    server.close(() => {
+      console.log('[关闭] HTTP 服务已停止');
+      process.exit(0);
+    });
+    setTimeout(() => { process.exit(0); }, 2000);
+  }, 300);
+}
+process.on('SIGINT', () => gracefulShutdown('SIGINT'));
+process.on('SIGTERM', () => gracefulShutdown('SIGTERM'));
+
 // ─── 启动 ────────────────────────────────────────────────
 function startServer(port) {
   server.on('error', (err) => {
