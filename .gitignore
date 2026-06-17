@@ -5,3 +5,26 @@ data/
 .admin.env
 .data/
 .reasonix/
+
+# —— 敏感文件（含 SSH 密码/管理员密码/服务器 IP） ——
+check_*.js
+deploy_*.js
+deploy_*.bat
+deploy_*.ps1
+deploy_*.txt
+final_start*.js
+fix_*.js
+fix_*.sh
+debug_*.js
+debug_*.md
+_pw.*
+_askpass.*
+_deploy.*
+_update.*
+_gen_fix*.js
+_gen_missing*.js
+_gen_update*.js
+core_fix_cmd.txt
+find_transport.js
+.admin.env
+.env
