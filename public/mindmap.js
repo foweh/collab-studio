@@ -19,6 +19,26 @@ const canvas = document.getElementById('mindmap-canvas');
 const ctx = canvas.getContext('2d');
 const titleEl = document.getElementById('mindmap-title');
 
+// IME 输入用透明 input（支持中文/日文等输入法）
+const editingInput = document.createElement('input');
+editingInput.style.cssText = 'position:absolute;z-index:10;background:transparent;border:none;outline:none;color:transparent;caret-color:transparent;padding:0;margin:0;left:-9999px;top:-9999px;font:14px sans-serif';
+editingInput.autocomplete = 'off';
+editingInput.autocorrect = 'off';
+editingInput.autocapitalize = 'off';
+editingInput.spellcheck = false;
+const editorEl = document.getElementById('mindmap-editor') || canvas.parentElement;
+editorEl.appendChild(editingInput);
+editingInput.addEventListener('input', () => {
+  if (!editingNodeId) return;
+  editingText = editingInput.value;
+  const node = nodes.find(n => n.id === editingNodeId);
+  if (node) {
+    node.textWidth = measureText(editingText || '节点');
+    node.width = Math.max(NODE_MIN_W, node.textWidth + NODE_PAD * 2);
+  }
+  render();
+});
+
 // ─── 常量 ────────────────────────────────────────────────
 const NODE_MIN_W = 100;
 const NODE_H = 38;
@@ -1284,6 +1304,18 @@ function startEditing(node) {
     cursorVisible = !cursorVisible;
     render();
   }, 530);
+  // 定位透明 input 到 node 位置（IME 候选窗口位置正确）
+  const sx = node.x * camera.zoom + camera.x;
+  const sy = node.y * camera.zoom + camera.y;
+  const sw = Math.max((node.width || NODE_MIN_W) * camera.zoom, 20);
+  const sh = (node.height || NODE_H) * camera.zoom;
+  editingInput.style.left = sx + 'px';
+  editingInput.style.top = sy + 'px';
+  editingInput.style.width = sw + 'px';
+  editingInput.style.height = sh + 'px';
+  editingInput.style.font = FONT;
+  editingInput.value = node.text || '';
+  editingInput.focus();
   render();
 }
 
@@ -1294,6 +1326,8 @@ function finishEditing(save) {
   const node = nodes.find(n => n.id === editingNodeId);
   if (node) {
     releaseLock('mindmap-node', editingNodeId);
+    // 从 input 读取最终值（IME 组合完成后的完整文本）
+    if (save !== false) editingText = editingInput.value;
     if (save !== false && node.text !== editingText) {
       pushUndo();
       node.text = editingText || '节点';
@@ -1303,6 +1337,9 @@ function finishEditing(save) {
   }
   editingNodeId = null;
   editingText = '';
+  editingInput.style.left = '-9999px';
+  editingInput.value = '';
+  editingInput.blur();
   render();
   if (node) saveData();
 }
@@ -1360,6 +1397,7 @@ document.addEventListener('keydown', (e) => {
   if (!panel || !panel.classList.contains('active')) return;
 
   // ── Canvas 内编辑模式 ──
+  // 文字输入由透明的 DOM input 原生处理（支持 IME 中文输入法）
   if (editingNodeId) {
     if (e.key === 'Enter') { e.preventDefault(); finishEditing(true); return; }
     if (e.key === 'Escape') { e.preventDefault(); finishEditing(false); return; }
@@ -1369,31 +1407,7 @@ document.addEventListener('keydown', (e) => {
       addChild();
       return;
     }
-    if (e.key === 'Backspace') {
-      // 删除时不要触发 deleteSelected
-      e.preventDefault();
-      editingText = editingText.slice(0, -1);
-      const node = nodes.find(n => n.id === editingNodeId);
-      if (node) {
-        node.textWidth = measureText(editingText || '节点');
-        node.width = Math.max(NODE_MIN_W, node.textWidth + NODE_PAD * 2);
-      }
-      render();
-      return;
-    }
-    // 可打印字符
-    if (e.key.length === 1 && !e.ctrlKey && !e.metaKey && !e.altKey) {
-      e.preventDefault();
-      editingText += e.key;
-      const node = nodes.find(n => n.id === editingNodeId);
-      if (node) {
-        node.textWidth = measureText(editingText || '节点');
-        node.width = Math.max(NODE_MIN_W, node.textWidth + NODE_PAD * 2);
-      }
-      render();
-      return;
-    }
-    return; // 编辑中其他键忽略
+    return; // 退格/文字/组合键由 input 原生处理
   }
 
   // ── 普通快捷键 ──
