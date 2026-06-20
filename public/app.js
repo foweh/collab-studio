@@ -22,13 +22,16 @@ window.registerCollabModule = function(name, api) {
 };
 
 const socket = io({
+  transports: ['websocket'], // 纯 WebSocket，避免 polling 400 错误
   reconnection: true,
   reconnectionAttempts: 5,
   reconnectionDelay: 1000,
   reconnectionDelayMax: 5000,
 });
 CollabStudio.socket = socket;
-const fenjingSocket = io('/fenjing');
+const fenjingSocket = io('/fenjing', {
+  transports: ['websocket'],
+});
 
 let myUserId = localStorage.getItem('collab-user-id');
 if (!myUserId) {
