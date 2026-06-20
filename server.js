@@ -1,6 +1,7 @@
 // ─── 多机协作创作工作室 服务端 ──────────────────────────
 const express = require('express');
 const http = require('http');
+const https = require('https');
 const helmet = require('helmet');
 const { Server: SocketIOServer } = require('socket.io');
 const { io: SocketIOClient } = require('socket.io-client');
@@ -315,13 +316,27 @@ app.use(helmet({
   originAgentCluster: false,
 }));
 app.use(express.json({ limit: '3mb' }));
-const server = http.createServer(app);
+
+// ─── TLS 证书 ──────────────────────────────────────────
+let sslOptions = null;
+try {
+  sslOptions = {
+    key: fs.readFileSync(path.join(__dirname, 'ssl', 'privkey.pem')),
+    cert: fs.readFileSync(path.join(__dirname, 'ssl', 'cert.pem')),
+  };
+  console.log('[SSL] 证书已加载');
+} catch (e) {
+  console.warn('[SSL] 证书未找到，仅启动 HTTP:', e.message);
+}
+
+const HTTPS_PORT = 443;
+const server = sslOptions ? https.createServer(sslOptions, app) : http.createServer(app);
 const io = new SocketIOServer(server, {
   cors: false,
   maxHttpBufferSize: 10 * 1024 * 1024,
 });
 
-// 注册日志服务的 IO 引用，使其可以广播日志事件
+// 日志服务 IO 引用
 logger.setIO(io);
 
 app.get('/', (req, res) => res.sendFile(path.join(__dirname, 'public', 'login.html')));
@@ -2300,27 +2315,37 @@ function startServer(port) {
       for (const iface of os.networkInterfaces()[name])
         if (iface.family === 'IPv4' && !iface.internal) { ip = iface.address; break; }
   } catch (_) { /* 获取本机 IP 失败，使用 localhost */ }
+  const proto = sslOptions ? 'https' : 'http';
+  const showPort = sslOptions ? ` (HTTPS:${HTTPS_PORT} / HTTP:${HTTP_PORT})` : '';
   console.log('╔══════════════════════════════════════════╗');
   console.log(JOIN_TARGET ? '║    🧪 测试实例 (--join 模式)              ║' : '║    🎬 多机协作创作工作室 v2.0            ║');
   console.log('╠══════════════════════════════════════════╣');
   console.log(`║  服务ID: ${SERVER_ID.padEnd(28)}║`);
-  console.log(`║  本机:   http://localhost:${HTTP_PORT}${' '.repeat(13 - String(HTTP_PORT).length)}║`);
+  console.log(`║  🔒 ${proto}://localhost:${sslOptions ? HTTPS_PORT : HTTP_PORT}${' '.repeat(Math.max(0, 15 - String(sslOptions ? HTTPS_PORT : HTTP_PORT).length))}║`);
   if (JOIN_TARGET) console.log(`║  加入:   ${JOIN_TARGET.padEnd(27)}║`);
-  else console.log(`║  局域网: http://${ip}:${HTTP_PORT}${' '.repeat(Math.max(0, 23 - ip.length - String(HTTP_PORT).length))}║`);
+  else console.log(`║  局域网: ${proto}://${ip}:${sslOptions ? HTTPS_PORT : HTTP_PORT}${' '.repeat(Math.max(0, 17 - ip.length - String(sslOptions ? HTTPS_PORT : HTTP_PORT).length))}║`);
+  console.log(`║  HTTP:   http://${ip}:${HTTP_PORT}${' '.repeat(Math.max(0, 17 - ip.length - String(HTTP_PORT).length))}(自动跳转 HTTPS)║`);
   console.log('║                                        ║');
-  if (JOIN_TARGET) {
-    console.log('║  浏览器1 → http://localhost:3000         ║');
-    console.log(`║  浏览器2 → http://localhost:${HTTP_PORT}${' '.repeat(15 - String(HTTP_PORT).length)}║`);
-  } else {
-    console.log('║  多台电脑打开页面 → 开启局域网          ║');
-    console.log('║  自动发现并组建协作网络                  ║');
-  }
+  console.log('║  多台电脑打开页面 → 开启局域网          ║');
+  console.log('║  自动发现并组建协作网络                  ║');
   console.log('╠══════════════════════════════════════════╣');
   console.log('║  👑 管理员: 热合曼                        ║');
   console.log('║  🔑 密码: 已设置（登录页输入）            ║');
   console.log('║  💡 登录后可在右侧面板修改密码           ║');
   console.log('╚══════════════════════════════════════════╝');
   });
+
+  // HTTP → HTTPS 重定向
+  if (sslOptions) {
+    const httpApp = express();
+    httpApp.use((req, res) => {
+      const host = req.headers.host ? req.headers.host.replace(/:3000/, '') : ip;
+      res.redirect(301, `https://${host}:${HTTPS_PORT}${req.url}`);
+    });
+    http.createServer(httpApp).listen(HTTP_PORT, '0.0.0.0', () => {
+      console.log(`[HTTP] :${HTTP_PORT} → 自动重定向到 HTTPS`);
+    });
+  }
 }
 
-startServer(HTTP_PORT);
+startServer(sslOptions ? HTTPS_PORT : HTTP_PORT);
