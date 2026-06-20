@@ -311,7 +311,8 @@ setInterval(() => {
 const app = express();
 app.use(helmet({
   contentSecurityPolicy: false, // Socket.IO needs inline scripts
-  crossOriginOpenerPolicy: { policy: 'same-origin-allow-popups' },
+  crossOriginOpenerPolicy: false, // HTTP 环境下无实际效果，仅产生控制台警告
+  originAgentCluster: false,
 }));
 app.use(express.json({ limit: '3mb' }));
 const server = http.createServer(app);
