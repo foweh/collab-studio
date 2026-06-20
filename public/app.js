@@ -1055,7 +1055,8 @@ socket.on('login-success', ({ userName, isAdmin: admin, role, avatar }) => {
   // 恢复刷新前的面板
   var lastPanel = sessionStorage.getItem('collab-last-panel');
   if (lastPanel) switchModule(lastPanel);
-  if (isAdmin) {
+  if (isAdmin && lastPanel !== 'admin') {
+    // switchModule('admin') 已 emit 过，避免重复
     socket.emit('admin-get-stats');
     socket.emit('admin-list-resets');
     socket.emit('admin-list-msg-requests');

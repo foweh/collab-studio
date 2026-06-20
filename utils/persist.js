@@ -34,14 +34,38 @@ function loadJSON(filePath, fallback = null) {
   return fallback;
 }
 
+// 每个文件的写入队列，防止并发写入导致数据错乱
+const _writeQueues = new Map();
+
 function saveJSON(filePath, data) {
-  try {
-    const tmpPath = filePath + '.tmp.' + process.pid;
-    fs.writeFileSync(tmpPath, JSON.stringify(data, null, 2), 'utf-8');
-    try { fs.chmodSync(tmpPath, 0o600); } catch (_) {}
-    fs.renameSync(tmpPath, filePath);
-  } catch (e) {
-    console.error(`[持久化] 写入失败 ${path.basename(filePath)}:`, e.message);
+  const key = path.resolve(filePath);
+  // 加入队列：把数据缓存到最新值，批量异步写入
+  if (!_writeQueues.has(key)) {
+    _writeQueues.set(key, { pending: null, writing: false });
+  }
+  const q = _writeQueues.get(key);
+  q.pending = data;
+  if (!q.writing) {
+    q.writing = true;
+    // 下一个事件循环 tick 再写入，合并同一 tick 内的多次 saveJSON 调用
+    setImmediate(() => {
+      q.writing = false;
+      const d = q.pending;
+      q.pending = null;
+      if (d === null) return;
+      const tmpPath = filePath + '.tmp.' + process.pid;
+      // 异步写入，不阻塞事件循环
+      fs.writeFile(tmpPath, JSON.stringify(d, null, 2), 'utf-8', (err) => {
+        if (err) {
+          console.error(`[持久化] 写入失败 ${path.basename(filePath)}:`, err.message);
+          return;
+        }
+        try { fs.chmodSync(tmpPath, 0o600); } catch (_) {}
+        fs.rename(tmpPath, filePath, (err2) => {
+          if (err2) console.error(`[持久化] 重命名失败 ${path.basename(filePath)}:`, err2.message);
+        });
+      });
+    });
   }
 }
 

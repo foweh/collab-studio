@@ -709,7 +709,8 @@ io.on('connection', (socket) => {
         console.log(`[login] 成功: token 验证通过 用户="${userName}"`);
         socket.userName = userName;
         socket.isAdmin = users[userName]?.isAdmin || false;
-        auth.updateLastSeen(userName);
+        if (users[userName]) users[userName].lastSeen = Date.now();
+        auth.saveUsers();
         onlineUsers.set(socket.id, { name: userName, joinedAt: Date.now(), isAdmin: socket.isAdmin, fingerprint: fingerprint || '' });
         broadcastOnlineUsers();
         addLog(socket.id, userName, 'reconnected', 'system', '');
@@ -779,11 +780,11 @@ io.on('connection', (socket) => {
       }
     }
     if (fingerprint) users[userName].fingerprint = fingerprint;
+    users[userName].lastSeen = Date.now();
     auth.saveUsers();
 
     socket.isAdmin = isAdmin;
     onlineUsers.set(socket.id, { name: userName, joinedAt: Date.now(), isAdmin, fingerprint: fingerprint || '' });
-    auth.updateLastSeen(userName);
     broadcastOnlineUsers();
     addLog(socket.id, userName, 'joined', 'system', '');
     socket.emit('login-success', { userName, isAdmin, hasPassword: !!users[userName]?.passwordHash, role: isAdmin ? 'editor' : (users[userName]?.role || 'commenter'), avatar: users[userName]?.avatar || '', token: auth.generateSessionToken(userName) });
