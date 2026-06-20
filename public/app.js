@@ -1091,6 +1091,12 @@ socket.on('disconnect', (reason) => {
   }
 });
 
+// 重连彻底失败 → 可能是服务器重启导致会话失效，自动刷新
+socket.io.on('reconnect_failed', () => {
+  sessionStorage.removeItem('collab-auth');
+  window.location.reload();
+});
+
 socket.on('project-removed', (projectId) => {
   // 项目从列表中移除（权限变更导致不可见）
   projects = projects.filter(p => p.id !== projectId);
