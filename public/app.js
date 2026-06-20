@@ -757,6 +757,54 @@ function approveMsgReq(from, approve) {
     if (el.textContent.includes(from)) el.remove();
   });
 }
+
+// ─── 管理面板统计 ──────────────────────────────────────
+socket.on('admin-stats', ({ onlineUsers, peers, projects, logCount }) => {
+  const uEl = document.getElementById('ctl-users');
+  const pEl = document.getElementById('ctl-peers');
+  const prEl = document.getElementById('ctl-projects');
+  const lEl = document.getElementById('ctl-logs');
+  if (uEl) uEl.textContent = onlineUsers ?? 0;
+  if (pEl) pEl.textContent = peers ?? 0;
+  if (prEl) prEl.textContent = projects ?? 0;
+  if (lEl) lEl.textContent = logCount ?? 0;
+});
+
+// ─── 管理面板 - 密码重置审批列表 ────────────────────────
+socket.on('admin-resets-list', (resets) => {
+  const container = document.getElementById('admin-resets-list');
+  const section = document.getElementById('admin-resets');
+  if (!container) return;
+  if (!resets || resets.length === 0) {
+    if (section) section.style.display = 'none';
+    container.innerHTML = '';
+    return;
+  }
+  if (section) section.style.display = '';
+  container.innerHTML = resets.map(r => {
+    const time = new Date(r.time).toLocaleString();
+    return `<div style="padding:6px 8px;margin:4px 0;background:var(--surface2);border-radius:4px;font-size:12px">
+      <strong>${esc(r.name)}</strong> 申请重置密码
+      <span style="color:var(--text-dim);font-size:10px">${time}</span>
+      <div style="margin-top:2px;color:var(--text-dim);font-size:11px">理由: ${esc(r.reason || '无')}</div>
+      <div style="margin-top:4px">
+        <button onclick="approveReset(${r.id},'${esc(r.name)}','${esc(r.newPassword || '')}')" style="padding:2px 8px;background:var(--success,#4caf50);color:#fff;border:none;border-radius:4px;cursor:pointer;font-size:11px;margin-right:4px">✓ 批准</button>
+        <button onclick="rejectReset(${r.id})" style="padding:2px 8px;background:var(--danger,#f44336);color:#fff;border:none;border-radius:4px;cursor:pointer;font-size:11px">✗ 拒绝</button>
+      </div>
+    </div>`;
+  }).join('');
+});
+
+function approveReset(requestId, name, newPassword) {
+  socket.emit('admin-approve-reset', { requestId, name, newPassword, approve: true });
+  showToast('✅ 已批准 ' + name + ' 的密码重置');
+}
+
+function rejectReset(requestId) {
+  socket.emit('admin-approve-reset', { requestId, name: '', newPassword: '', approve: false });
+  showToast('❌ 已拒绝密码重置申请');
+}
+
 // ─── Toast 消息 ──────────────────────────────────────────
 let toastTimer = null;
 function showToast(msg) {
