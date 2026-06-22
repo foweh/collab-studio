@@ -17,6 +17,7 @@ const auth = require('./services/auth');
 const projectSvc = require('./services/project');
 const logger = require('./services/logger');
 const annotationSvc = require('./services/annotation');
+const { getCapCutMateClient } = require('./services/capcut-mate');
 const { users } = auth; // 直接引用 users 对象以兼容现有代码
 
 // ─── 文件路径 ────────────────────────────────────────────
@@ -62,10 +63,15 @@ const SCAN_DURATION = 5 * 60 * 1000;
 
 const args = process.argv.slice(2);
 let JOIN_TARGET = null;
+let CAPCUT_MATE_PORT = parseInt(process.env.CAPCUT_MATE_PORT) || 0;
 for (let i = 0; i < args.length; i++) {
   if (args[i] === '--port'  && args[i+1]) { HTTP_PORT = parseInt(args[i+1]); i++; }
   if (args[i] === '--join'  && args[i+1]) { JOIN_TARGET = args[i+1]; i++; }
+  if (args[i] === '--capcut-port' && args[i+1]) { CAPCUT_MATE_PORT = parseInt(args[i+1]); i++; }
 }
+
+// CapCut Mate 客户端（单例，端口从 CLI/ENV 或持久化文件恢复）
+const capcutMate = getCapCutMateClient({ port: CAPCUT_MATE_PORT });
 
 const SERVER_ID = uuid().slice(0, 8);
 let SERVER_NAME = os.hostname();
@@ -382,6 +388,177 @@ app.get('/music-studio.html', (req, res) => {
   res.setHeader('Pragma', 'no-cache');
   res.setHeader('Expires', '0');
   res.sendFile(path.join(__dirname, 'public', 'music-studio.html'));
+});
+
+// ─── CapCut Mate API ──────────────────────────────────
+// 所有剪映相关端点统一在 /api/capcut/ 下，
+// 核心逻辑委托给 services/capcut-mate.js 模块。
+// 旧端点（/api/capcut-proxy/*、/api/capcut-scan 等）保留兼容。
+
+// ── 新端点 ──────────────────────────────────────────
+
+// GET /api/capcut/status — 全面状态（进程 + Mate + 草稿）
+app.get('/api/capcut/status', async (req, res) => {
+  try {
+    const result = await capcutMate.getFullStatus();
+    res.json(result);
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// POST /api/capcut/scan — 触发端口扫描
+app.post('/api/capcut/scan', async (req, res) => {
+  try {
+    const result = await capcutMate.scan();
+    res.json(result);
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// POST /api/capcut/connect — 显式连接到指定端口
+app.post('/api/capcut/connect', async (req, res) => {
+  const { port, https: useHttps } = req.body || {};
+  if (!port) return res.status(400).json({ error: 'port 必填' });
+  try {
+    const ok = await capcutMate.connect(parseInt(port), !!useHttps);
+    res.json({ ok, port: capcutMate.port, https: capcutMate.https, draftUrl: capcutMate.draftUrl });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// DELETE /api/capcut/connect — 断开连接
+app.delete('/api/capcut/connect', (req, res) => {
+  capcutMate.disconnect();
+  res.json({ ok: true });
+});
+
+// POST /api/capcut/launch — 启动剪映
+app.post('/api/capcut/launch', async (req, res) => {
+  try {
+    const result = await capcutMate.launch();
+    res.json(result);
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// GET /api/capcut/draft — 获取当前草稿
+app.get('/api/capcut/draft', async (req, res) => {
+  try {
+    const result = await capcutMate.getDraft();
+    res.json(result);
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// POST /api/capcut/draft — 创建新草稿
+app.post('/api/capcut/draft', async (req, res) => {
+  const { width, height } = req.body || {};
+  try {
+    const result = await capcutMate.createDraft(width, height);
+    res.json(result);
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// POST /api/capcut/draft/sync — 推送操作批次到剪映
+app.post('/api/capcut/draft/sync', async (req, res) => {
+  const { draftUrl, operations } = req.body || {};
+  try {
+    const result = await capcutMate.syncDraft(draftUrl, operations);
+    res.json(result);
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// ALL /api/capcut/proxy/* — 通用代理透传
+app.all('/api/capcut/proxy/*', async (req, res) => {
+  const targetPath = req.params[0] || '';
+  const referer = req.headers['x-capcut-referer'] || '';
+  try {
+    const result = await capcutMate.proxy(req.method, targetPath, req.body, referer);
+    res.status(result.status);
+    if (result.contentType) res.set('content-type', result.contentType);
+    res.send(result.body);
+  } catch (e) {
+    res.status(502).json({ error: e.message, hint: '请确保剪映和剪映小助手已启动' });
+  }
+});
+
+// ── 旧端点兼容（内部转发，下次大版本移除） ──────────
+
+app.all('/api/capcut-proxy/*', (req, res) => {
+  console.warn('[deprecated] /api/capcut-proxy/* → 请迁移到 /api/capcut/proxy/*');
+  const targetPath = req.params[0] || '';
+  const referer = req.headers['x-capcut-referer'] || '';
+  req.url = '/api/capcut/proxy/' + targetPath;
+  // 直接走新逻辑
+  capcutMate.proxy(req.method, targetPath, req.body, referer)
+    .then(result => {
+      res.status(result.status);
+      if (result.contentType) res.set('content-type', result.contentType);
+      res.send(result.body);
+    })
+    .catch(e => {
+      res.status(502).json({ error: e.message, hint: '请确保剪映和剪映小助手已启动' });
+    });
+});
+
+app.get('/api/capcut-scan', async (req, res) => {
+  console.warn('[deprecated] GET /api/capcut-scan → 请使用 POST /api/capcut/scan');
+  try {
+    const result = await capcutMate.scan();
+    res.json(result);
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+app.get('/api/capcut-full-status', async (req, res) => {
+  console.warn('[deprecated] GET /api/capcut-full-status → 请使用 GET /api/capcut/status');
+  try {
+    const result = await capcutMate.getFullStatus();
+    res.json(result);
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+app.post('/api/capcut-launch', async (req, res) => {
+  console.warn('[deprecated] POST /api/capcut-launch → 请使用 POST /api/capcut/launch');
+  try {
+    const result = await capcutMate.launch();
+    res.json(result);
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+app.get('/api/capcut-drafts', async (req, res) => {
+  console.warn('[deprecated] GET /api/capcut-drafts → 请使用 GET /api/capcut/draft');
+  try {
+    const result = await capcutMate.getDraft();
+    res.json(result);
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+app.post('/api/capcut-sync-draft', async (req, res) => {
+  console.warn('[deprecated] POST /api/capcut-sync-draft → 请使用 POST /api/capcut/draft/sync');
+  const { draftUrl, operations } = req.body || {};
+  try {
+    const result = await capcutMate.syncDraft(draftUrl, operations);
+    res.json(result);
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
 });
 
 app.use(express.static(path.join(__dirname, 'public')));
