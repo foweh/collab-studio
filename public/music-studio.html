@@ -406,11 +406,23 @@ body {
     <div class="panel-header">
       <h3>🔍 音乐搜索</h3>
       <div class="search-box">
+        <select id="searchSource" style="padding:6px 10px;border-radius:6px;border:1px solid var(--border);background:var(--card);color:var(--text);font-size:0.85rem;cursor:pointer">
+          <option value="tx">🎵 QQ音乐</option>
+          <option value="kg">🎤 酷狗音乐</option>
+        </select>
+        <select id="searchQuality" style="padding:6px 8px;border-radius:6px;border:1px solid var(--border);background:var(--card);color:var(--text);font-size:0.85rem;cursor:pointer">
+          <option value="320k">320k</option>
+          <option value="128k">128k</option>
+        </select>
         <input type="text" id="searchInput" placeholder="搜索歌曲、歌手…" autocomplete="off">
         <button class="btn-sm accent" id="btnSearch">搜索</button>
       </div>
     </div>
     <div class="panel-body">
+      <div id="hotSection" style="margin-bottom:12px">
+        <div style="font-size:0.8rem;color:var(--text-dim);margin-bottom:6px">🔥 热门搜索</div>
+        <div id="hotTracks" style="display:flex;flex-wrap:wrap;gap:6px"></div>
+      </div>
       <div class="result-list" id="searchResults">
         <div class="empty-state"><div class="icon">🔍</div><p>输入关键词开始搜索</p></div>
       </div>
@@ -578,14 +590,50 @@ async function searchQQMusic(query, page = 1) {
       ? `https://y.gtimg.cn/music/photo_new/T002R300x300M000${item.album.mid}.jpg`
       : (item.albummid ? `https://y.gtimg.cn/music/photo_new/T002R300x300M000${item.albummid}.jpg` : ''),
     duration: item.interval || item.duration || 0,
+    source: 'tx',
   }));
 }
 
 // ==============================
-// API — Get Audio URL
+// API — 酷狗搜索
 // ==============================
-async function getAudioUrl(songmid, quality = '320k') {
-  const resp = await fetch(`https://lxmusicapi.onrender.com/url/tx/${songmid}/${quality}`, {
+async function searchKugou(query, page = 1) {
+  const resp = await fetch(`https://songsearch.kugou.com/song_search_v2?keyword=${encodeURIComponent(query)}&page=${page}&pagesize=30&userid=0&clientver=&platform=WebFilter&filter=2&iscorrection=1&privilege_filter=0&area_code=1`, {
+    headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36' }
+  });
+  const data = await resp.json();
+  const list = data?.data?.lists || [];
+  return list.map(item => ({
+    id: item.FileHash || item.Grp?.[0]?.FileHash || '',
+    songmid: item.FileHash || item.Grp?.[0]?.FileHash || '',
+    hash: item.FileHash || item.Grp?.[0]?.FileHash || '',
+    title: item.SongName || item.OriSongName || '',
+    artist: item.SingerName || item.Singers?.[0]?.name || '',
+    album: item.AlbumName || item.Grp?.[0]?.AlbumName || '',
+    cover: (item.Image || item.Grp?.[0]?.Image || '').replace('{size}', '400'),
+    duration: item.Duration || 0,
+    source: 'kg',
+  }));
+}
+
+// ==============================
+// API — Get Audio URL (multi-source)
+// ==============================
+const SOURCE_MAP = {
+  tx: { name: 'QQ音乐', urlPrefix: 'tx' },
+  kg: { name: '酷狗音乐', urlPrefix: 'kg' },
+  kw: { name: '酷我音乐', urlPrefix: 'kw' },
+  wy: { name: '网易云音乐', urlPrefix: 'wy' },
+  mg: { name: '咪咕音乐', urlPrefix: 'mg' },
+};
+
+async function getAudioUrl(track, quality) {
+  const src = track.source || 'tx';
+  const prefix = SOURCE_MAP[src]?.urlPrefix || 'tx';
+  const songId = track.songmid || track.id || track.hash || '';
+  const q = quality || $('#searchQuality')?.value || '320k';
+
+  const resp = await fetch(`https://lxmusicapi.onrender.com/url/${prefix}/${songId}/${q}`, {
     headers: { 'X-Request-Key': 'share-v3' }
   });
   const data = await resp.json();
@@ -732,7 +780,7 @@ function saveFavorites() {
 }
 
 function toggleFavorite(track) {
-  const idx = favorites.findIndex(f => f.songmid === track.songmid);
+  const idx = favorites.findIndex(f => f.songmid === track.songmid && f.source === track.source);
   if (idx >= 0) {
     favorites.splice(idx, 1);
     showToast('已取消收藏');
@@ -740,11 +788,13 @@ function toggleFavorite(track) {
     favorites.push({
       songmid: track.songmid,
       id: track.id,
+      hash: track.hash,
       title: track.title,
       artist: track.artist,
       cover: track.cover,
       album: track.album,
       duration: track.duration,
+      source: track.source || 'tx',
     });
     showToast('⭐ 已收藏');
   }
@@ -753,8 +803,8 @@ function toggleFavorite(track) {
   renderSearchResults(lastSearchResults);
 }
 
-function isFavorite(songmid) {
-  return favorites.some(f => f.songmid === songmid);
+function isFavorite(track) {
+  return favorites.some(f => f.songmid === track.songmid && f.source === track.source);
 }
 
 function updateFavCount() {
@@ -767,11 +817,13 @@ function renderFavorites() {
     container.innerHTML = '<div class="empty-state"><div class="icon">⭐</div><p>暂无收藏</p><p style="font-size:0.75rem;color:var(--text-dim)">在搜索结果中点击 ⭐ 收藏歌曲</p></div>';
     return;
   }
-  container.innerHTML = favorites.map((t, i) => `
+  container.innerHTML = favorites.map((t, i) => {
+    const srcLabel = SOURCE_MAP[t.source]?.name || t.source || '';
+    return `
     <div class="track-row">
       <img class="tr-cover" src="${t.cover || ''}" alt="" onerror="this.style.display='none'">
       <div class="tr-info">
-        <div class="tr-title">${escapeHtml(t.title)}</div>
+        <div class="tr-title">${escapeHtml(t.title)} <span style="font-size:0.65rem;color:var(--accent);background:var(--card);padding:1px 5px;border-radius:3px">${escapeHtml(srcLabel)}</span></div>
         <div class="tr-artist">${escapeHtml(t.artist)} · ${fmtTime(t.duration)}</div>
       </div>
       <div class="tr-actions">
@@ -780,7 +832,8 @@ function renderFavorites() {
         <button class="btn-icon fav" data-action="unfav" data-idx="${i}" title="取消收藏">💔</button>
       </div>
     </div>
-  `).join('');
+  `;
+  }).join('');
 
   container.querySelectorAll('[data-action="play-fav"]').forEach(btn => {
     btn.addEventListener('click', (e) => { e.stopPropagation(); playFavorite(parseInt(btn.dataset.idx)); });
@@ -797,7 +850,7 @@ async function playFavorite(idx) {
   const t = favorites[idx];
   showToast('⏳ 加载中…');
   try {
-    const url = await getAudioUrl(t.songmid);
+    const url = await getAudioUrl(t);
     await playTrackUrl(t, url);
   } catch(e) {
     showToast('❌ 加载失败: ' + e.message);
@@ -814,7 +867,7 @@ async function addFavoriteToEditor(idx) {
   const t = favorites[idx];
   showToast('⏳ 添加到编辑器…');
   try {
-    const url = await getAudioUrl(t.songmid);
+    const url = await getAudioUrl(t);
     const buffer = await fetchAudioBuffer(url);
     addTrackToEditor({
       id: t.songmid,
@@ -840,7 +893,7 @@ $('#btnFavToEditor').addEventListener('click', async () => {
   showToast('⏳ 批量添加中…');
   for (const t of favorites) {
     try {
-      const url = await getAudioUrl(t.songmid);
+      const url = await getAudioUrl(t);
       const buffer = await fetchAudioBuffer(url);
       addTrackToEditor({
         id: t.songmid,
@@ -881,14 +934,19 @@ let lastSearchResults = [];
 async function doSearch() {
   const q = searchInput.value.trim();
   if (!q) return;
+  const source = $('#searchSource').value;
   btnSearch.disabled = true;
   btnSearch.textContent = '...';
   searchResults.innerHTML = '<div class="empty-state"><div class="spinner"></div><p>搜索中…</p></div>';
   try {
-    lastSearchResults = await searchQQMusic(q);
+    if (source === 'kg') {
+      lastSearchResults = await searchKugou(q);
+    } else {
+      lastSearchResults = await searchQQMusic(q);
+    }
     renderSearchResults(lastSearchResults);
   } catch(e) {
-    searchResults.innerHTML = `<div class="empty-state"><p>❌ 搜索失败: ${e.message}</p><p style="font-size:0.75rem">可能是网络问题或 API 限制</p></div>`;
+    searchResults.innerHTML = `<div class="empty-state"><p>❌ 搜索失败: ${e.message}</p><p style="font-size:0.75rem">可能是网络或 API 限制，尝试切换音源</p></div>`;
   }
   btnSearch.disabled = false;
   btnSearch.textContent = '搜索';
@@ -900,12 +958,13 @@ function renderSearchResults(results) {
     return;
   }
   searchResults.innerHTML = results.map((t, i) => {
-    const fav = isFavorite(t.songmid);
+    const fav = isFavorite(t);
+    const srcLabel = SOURCE_MAP[t.source]?.name || t.source || '';
     return `
       <div class="track-row">
         <img class="tr-cover" src="${t.cover || ''}" alt="" onerror="this.style.display='none'">
         <div class="tr-info">
-          <div class="tr-title">${escapeHtml(t.title)}</div>
+          <div class="tr-title">${escapeHtml(t.title)} <span style="font-size:0.65rem;color:var(--accent);background:var(--card);padding:1px 5px;border-radius:3px">${escapeHtml(srcLabel)}</span></div>
           <div class="tr-artist">${escapeHtml(t.artist)} · ${fmtTime(t.duration)}</div>
         </div>
         <div class="tr-actions">
@@ -931,7 +990,7 @@ async function playSearchResult(idx) {
   const t = lastSearchResults[idx];
   showToast('⏳ 加载中…');
   try {
-    const url = await getAudioUrl(t.songmid);
+    const url = await getAudioUrl(t);
     await playTrackUrl(t, url);
   } catch(e) {
     showToast('❌ 加载失败: ' + e.message);
@@ -942,7 +1001,7 @@ async function addSearchToEditor(idx) {
   const t = lastSearchResults[idx];
   showToast('⏳ 添加到编辑器…');
   try {
-    const url = await getAudioUrl(t.songmid);
+    const url = await getAudioUrl(t);
     const buffer = await fetchAudioBuffer(url);
     addTrackToEditor({
       id: t.songmid,
@@ -1389,9 +1448,30 @@ navTabs.forEach(tab => {
 });
 
 // ==============================
+// ==============================
+// HOT TAGS
+// ==============================
+const HOT_TAGS = ['周杰伦', '林俊杰', '陈奕迅', '邓紫棋', 'Taylor Swift', '纯音乐', '电子', '古风', '说唱', '民谣'];
+
+function renderHotTags() {
+  const container = $('#hotTracks');
+  container.innerHTML = HOT_TAGS.map(tag =>
+    `<button class="btn-sm" style="font-size:0.75rem;padding:3px 10px" data-tag="${tag}">${tag}</button>`
+  ).join('');
+
+  container.querySelectorAll('button').forEach(btn => {
+    btn.addEventListener('click', () => {
+      searchInput.value = btn.dataset.tag;
+      doSearch();
+    });
+  });
+}
+
+// ==============================
 // INIT
 // ==============================
 function init() {
+  renderHotTags();
   updateFavCount();
   updateTrackCount();
   renderFavorites();
