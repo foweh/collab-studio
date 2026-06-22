@@ -314,6 +314,7 @@ app.use(helmet({
   contentSecurityPolicy: false, // Socket.IO needs inline scripts
   crossOriginOpenerPolicy: false, // HTTP 环境下无实际效果，仅产生控制台警告
   originAgentCluster: false,
+  strictTransportSecurity: false, // localhost 不需要 HSTS，避免强制 HTTPS 导致连接失败
 }));
 app.use(express.json({ limit: '3mb' }));
 

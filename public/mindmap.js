@@ -49,6 +49,22 @@ const FONT = '14px -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif';
 const COLORS = ['#4fc3f7','#7c4dff','#ff7043','#66bb6a','#ffca28','#ec407a','#26c6da','#ab47bc'];
 const MARKERS = { 'priority1':'🔴','priority2':'🟠','priority3':'🟡','priority4':'🔵','priority5':'⚪','done':'✅','progress':'🔄','star':'⭐','important':'❗','question':'❓','idea':'💡','warning':'⚠️' };
 
+// ─── 图片相关常量 ──────────────────────────────────────
+const IMG_MAX_W = 120;
+const IMG_MAX_H = 90;
+const IMG_PAD = 6;
+const IMG_CLOSE_R = 9;
+const imageCache = new Map(); // url → Image 对象，避免重复加载
+
+function getCachedImage(url) {
+  if (!url) return null;
+  if (imageCache.has(url)) return imageCache.get(url);
+  const img = new Image();
+  img.src = url;
+  imageCache.set(url, img);
+  return img;
+}
+
 // ─── 边查询工具函数 ──────────────────────────────────────
 function getChildren(nodeId) {
   return edges.filter(e => e.from === nodeId).map(e => nodes.find(n => n.id === e.to)).filter(Boolean);
@@ -198,22 +214,25 @@ function autoLayout() {
     n.height = NODE_H;
   });
 
+  function nodeEffectiveH(n) { return getNodeEffectiveHeight(n); }
+
   // 递归计算子树布局
   function layoutSubtree(nodeId, x) {
     const node = nodes.find(n => n.id === nodeId);
     if (!node) return { totalH: 0 };
-    if (node.collapsed) return { totalH: node.height + VERT_GAP };
+    const effH = nodeEffectiveH(node);
+    if (node.collapsed) return { totalH: effH + VERT_GAP };
     const children = getChildren(nodeId);
-    if (children.length === 0) return { totalH: node.height + VERT_GAP };
+    if (children.length === 0) return { totalH: effH + VERT_GAP };
     const results = children.map(c => layoutSubtree(c.id, x + LEVEL_GAP + node.width));
     const totalH = results.reduce((sum, r) => sum + r.totalH, 0);
     let yOff = -totalH / 2;
     children.forEach((c, i) => {
       c.x = x + LEVEL_GAP + (node.width / 2);
-      c.y = yOff + results[i].totalH / 2 - c.height / 2;
+      c.y = yOff + results[i].totalH / 2 - nodeEffectiveH(c) / 2;
       yOff += results[i].totalH;
     });
-    return { totalH: Math.max(totalH, node.height + VERT_GAP) };
+    return { totalH: Math.max(totalH, nodeEffectiveH(node) + VERT_GAP) };
   }
 
   // 布局每个根节点（纵向排列多个根）
@@ -241,7 +260,7 @@ function getBounds() {
     if (n.x < minX) minX = n.x;
     if (n.y < minY) minY = n.y;
     if (n.x + (n.width || NODE_MIN_W) > maxX) maxX = n.x + (n.width || NODE_MIN_W);
-    if (n.y + (n.height || NODE_H) > maxY) maxY = n.y + (n.height || NODE_H);
+    if (n.y + getNodeEffectiveHeight(n) > maxY) maxY = n.y + getNodeEffectiveHeight(n);
   });
   return { minX, minY, maxX, maxY };
 }
@@ -345,24 +364,27 @@ function drawNode(node, selected) {
   const x = node.x, y = node.y, w = node.width || NODE_MIN_W, h = node.height || NODE_H;
   const color = node.color || '#4fc3f7';
   const shape = node.shape || 'rect';
+  // 有图片时扩展节点高度（文字区 + 图片区）
+  const effectiveH = node.image ? h + IMG_MAX_H + IMG_PAD * 2 : h;
+  const imgAreaY = node.image ? y + h + IMG_PAD : 0;
 
   ctx.save();
   ctx.shadowColor = selected ? 'rgba(79, 195, 247, 0.5)' : 'rgba(0,0,0,0.3)';
   ctx.shadowBlur = selected ? 20 : 6;
   ctx.shadowOffsetY = selected ? 0 : 2;
 
-  const grad = ctx.createLinearGradient(x, y, x, y + h);
+  const grad = ctx.createLinearGradient(x, y, x, y + effectiveH);
   grad.addColorStop(0, selected ? '#2a3a6a' : '#1e2a4a');
   grad.addColorStop(1, selected ? '#1e2a50' : '#162040');
 
   function drawBody() {
     switch (shape) {
-      case 'ellipse': ctx.ellipse(x + w / 2, y + h / 2, w / 2, h / 2, 0, 0, Math.PI * 2); break;
+      case 'ellipse': ctx.ellipse(x + w / 2, y + effectiveH / 2, w / 2, effectiveH / 2, 0, 0, Math.PI * 2); break;
       case 'diamond':
-        ctx.moveTo(x + w / 2, y); ctx.lineTo(x + w, y + h / 2);
-        ctx.lineTo(x + w / 2, y + h); ctx.lineTo(x, y + h / 2);
+        ctx.moveTo(x + w / 2, y); ctx.lineTo(x + w, y + effectiveH / 2);
+        ctx.lineTo(x + w / 2, y + effectiveH); ctx.lineTo(x, y + effectiveH / 2);
         ctx.closePath(); break;
-      default: ctx.roundRect(x, y, w, h, 8); break;
+      default: ctx.roundRect(x, y, w, effectiveH, 8); break;
     }
   }
 
@@ -419,6 +441,52 @@ function drawNode(node, selected) {
     ctx.fillText(MARKERS[node.marker], x + w + 4, y - 4);
   }
 
+  // ── 图片渲染 ────────────────────────────────────────
+  if (node.image) {
+    const imgW = IMG_MAX_W, imgH = IMG_MAX_H;
+    const imgX = x + (w - imgW) / 2;
+    const imgY = imgAreaY;
+
+    // 图片背景
+    ctx.shadowBlur = 0;
+    ctx.fillStyle = 'rgba(0,0,0,0.35)';
+    ctx.beginPath(); ctx.roundRect(imgX, imgY, imgW, imgH, 4); ctx.fill();
+    ctx.strokeStyle = 'rgba(255,255,255,0.1)';
+    ctx.lineWidth = 0.5;
+    ctx.beginPath(); ctx.roundRect(imgX, imgY, imgW, imgH, 4); ctx.stroke();
+
+    // 绘制图片（保持比例居中）
+    const img = getCachedImage(node.image);
+    if (img && img.complete && img.naturalWidth > 0) {
+      const scale = Math.min(imgW / img.naturalWidth, imgH / img.naturalHeight);
+      const drawW = img.naturalWidth * scale;
+      const drawH = img.naturalHeight * scale;
+      const drawX = imgX + (imgW - drawW) / 2;
+      const drawY = imgY + (imgH - drawH) / 2;
+      ctx.drawImage(img, drawX, drawY, drawW, drawH);
+    } else if (img && !img.complete) {
+      // 加载中……下次渲染时显示
+      img.onload = () => render();
+    }
+
+    // ✕ 关闭按钮
+    const cx = imgX + imgW - IMG_CLOSE_R;
+    const cy = imgY + IMG_CLOSE_R;
+    ctx.fillStyle = 'rgba(0,0,0,0.65)';
+    ctx.beginPath(); ctx.arc(cx, cy, IMG_CLOSE_R, 0, Math.PI * 2); ctx.fill();
+    ctx.strokeStyle = 'rgba(255,255,255,0.35)';
+    ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.arc(cx, cy, IMG_CLOSE_R, 0, Math.PI * 2); ctx.stroke();
+    // × 符号
+    ctx.strokeStyle = '#fff';
+    ctx.lineWidth = 1.5;
+    const s = IMG_CLOSE_R * 0.45;
+    ctx.beginPath();
+    ctx.moveTo(cx - s, cy - s); ctx.lineTo(cx + s, cy + s);
+    ctx.moveTo(cx + s, cy - s); ctx.lineTo(cx - s, cy + s);
+    ctx.stroke();
+  }
+
   // 折叠按钮
   const children = getChildren(node.id);
   if (children.length > 0) {
@@ -443,11 +511,23 @@ function drawNode(node, selected) {
     ctx.fillText(`${children.length}个子节点`, x + w + 26, y + h / 2);
   }
 
+  // 拖拽悬停高亮
+  if (dragOverNodeId === node.id) {
+    ctx.save();
+    ctx.shadowBlur = 0;
+    ctx.strokeStyle = 'rgba(255, 202, 40, 0.7)';
+    ctx.lineWidth = 2.5;
+    ctx.setLineDash([6, 3]);
+    ctx.beginPath(); ctx.roundRect(x - 3, y - 3, w + 6, effectiveH + 6, 10); ctx.stroke();
+    ctx.setLineDash([]);
+    ctx.restore();
+  }
+
   // 搜索高亮
   if (searchActive && searchQuery && (node.text||'').toLowerCase().includes(searchQuery.toLowerCase())) {
     ctx.strokeStyle = '#ffca28'; ctx.lineWidth = 2;
     ctx.setLineDash([]);
-    ctx.beginPath(); ctx.roundRect(x - 2, y - 2, w + 4, h + 4, 9); ctx.stroke();
+    ctx.beginPath(); ctx.roundRect(x - 2, y - 2, w + 4, effectiveH + 4, 9); ctx.stroke();
   }
 
   // 连接点指示器（加大）
@@ -479,12 +559,38 @@ function drawHUD() {
 function screenToWorld(sx, sy) { return { x: (sx - camera.x) / camera.zoom, y: (sy - camera.y) / camera.zoom }; }
 function worldToScreen(wx, wy) { return { x: wx * camera.zoom + camera.x, y: wy * camera.zoom + camera.y }; }
 
+function getNodeEffectiveHeight(node) {
+  const h = node.height || NODE_H;
+  return node.image ? h + IMG_MAX_H + IMG_PAD * 2 : h;
+}
+
+function getImageClosePos(node) {
+  if (!node.image) return null;
+  const w = node.width || NODE_MIN_W;
+  const h = node.height || NODE_H;
+  const imgX = node.x + (w - IMG_MAX_W) / 2;
+  const imgY = node.y + h + IMG_PAD;
+  return { cx: imgX + IMG_MAX_W - IMG_CLOSE_R, cy: imgY + IMG_CLOSE_R, r: IMG_CLOSE_R + 4 };
+}
+
 function hitTest(sx, sy) {
   const w = screenToWorld(sx, sy);
   for (let i = nodes.length - 1; i >= 0; i--) {
     const n = nodes[i];
-    const nw = n.width || NODE_MIN_W, nh = n.height || NODE_H;
+    const nw = n.width || NODE_MIN_W;
+    const nh = getNodeEffectiveHeight(n);
     if (w.x >= n.x && w.x <= n.x + nw && w.y >= n.y && w.y <= n.y + nh) return n;
+  }
+  return null;
+}
+
+function hitImageClose(sx, sy) {
+  const w = screenToWorld(sx, sy);
+  for (const n of nodes) {
+    if (!n.image) continue;
+    const pos = getImageClosePos(n);
+    if (!pos) continue;
+    if (Math.hypot(w.x - pos.cx, w.y - pos.cy) < pos.r) return n;
   }
   return null;
 }
@@ -603,6 +709,56 @@ canvas.addEventListener('wheel', onWheel, { passive: false });
 canvas.addEventListener('dblclick', onDblClick);
 canvas.addEventListener('contextmenu', onContextMenu);
 
+// ─── 拖拽图片到节点 ──────────────────────────────────────
+let dragOverNodeId = null;
+
+canvas.addEventListener('dragover', (e) => {
+  e.preventDefault();
+  const rect = canvas.getBoundingClientRect();
+  const sx = e.clientX - rect.left, sy = e.clientY - rect.top;
+  const hit = hitTest(sx, sy);
+  const newId = hit ? hit.id : null;
+  if (dragOverNodeId !== newId) {
+    dragOverNodeId = newId;
+    render(); // 重绘以显示/隐藏高亮
+  }
+});
+
+canvas.addEventListener('dragleave', (e) => {
+  if (dragOverNodeId !== null) {
+    dragOverNodeId = null;
+    render();
+  }
+});
+
+canvas.addEventListener('drop', (e) => {
+  e.preventDefault();
+  const targetId = dragOverNodeId;
+  dragOverNodeId = null;
+  render();
+  if (!targetId) return;
+  const file = e.dataTransfer.files[0];
+  if (!file || !file.type.startsWith('image/')) {
+    showToast('⚠️ 请拖放图片文件');
+    return;
+  }
+  const reader = new FileReader();
+  reader.onload = () => {
+    const node = nodes.find(n => n.id === targetId);
+    if (!node) return;
+    pushUndo();
+    showToast('🖼️ 压缩中...');
+    compressToTarget(reader.result, (dataUrl) => {
+      node.image = dataUrl;
+      selectedIds.clear(); selectedIds.add(node.id);
+      render(); saveData();
+      const kb = Math.round(dataUrl.length / 1024);
+      showToast(`🖼️ 图片已添加 (${kb}KB)`);
+    });
+  };
+  reader.readAsDataURL(file);
+});
+
 // ─── 触屏事件（手机端支持） ──────────────────────────────
 canvas.addEventListener('touchstart', onTouchStart, { passive: false });
 canvas.addEventListener('touchmove', onTouchMove, { passive: false });
@@ -631,6 +787,18 @@ function onTouchStart(e) {
     touchState.nodeId = null; touchState.isPan = false;
     touchState.longPressFired = false;
     touchState.pinchStartDist = 0;
+
+    // 检查图片 ✕ 按钮（触屏）
+    const imgClose = hitImageClose(sx, sy);
+    if (imgClose) {
+      pushUndo();
+      imgClose.image = null;
+      selectedIds.clear(); selectedIds.add(imgClose.id);
+      render(); saveData();
+      touchState.active = false;
+      e.preventDefault();
+      return;
+    }
 
     const hit = hitTest(sx, sy);
     if (hit) {
@@ -774,6 +942,15 @@ function onMouseDown(e) {
     toggleCollapse(collapseHit.id);
     return;
   }
+  // 检查是否点击了图片 ✕ 按钮
+  const imgCloseHit = hitImageClose(sx, sy);
+  if (imgCloseHit) {
+    pushUndo();
+    imgCloseHit.image = null;
+    selectedIds.clear(); selectedIds.add(imgCloseHit.id);
+    render(); saveData();
+    return;
+  }
   const hit = hitTest(sx, sy);
   if (hit) {
     if (e.shiftKey || e.ctrlKey || e.metaKey) {
@@ -814,7 +991,8 @@ function onMouseMove(e) {
     camera.x = pan.camX + (sx - pan.startX); camera.y = pan.camY + (sy - pan.startY);
     render();
   } else {
-    if (hitNodeConnector(sx, sy)) canvas.style.cursor = 'crosshair';
+    if (hitImageClose(sx, sy)) canvas.style.cursor = 'pointer';
+    else if (hitNodeConnector(sx, sy)) canvas.style.cursor = 'crosshair';
     else if (hitTest(sx, sy)) canvas.style.cursor = 'pointer';
     else canvas.style.cursor = 'grab';
   }
@@ -926,6 +1104,11 @@ function onContextMenu(e) {
   items.push({ icon: '🎨', label: '颜色', children: COLORS.map(c => ({ color: c })) });
   items.push({ icon: '🏷', label: '标记', children: Object.keys(MARKERS).map(k => ({ label: `${MARKERS[k]} ${k}` })) });
   items.push({ icon: '📝', label: '备注', action: () => showNote(targetNode) });
+  // 图片
+  items.push({ icon: '🖼️', label: '添加图片', action: () => addImageToNode(targetNode.id) });
+  if (targetNode.image) {
+    items.push({ icon: '🗑️', label: '删除图片', action: () => removeImageFromNode(targetNode.id) });
+  }
   items.push({ sep: true });
 
   // ── 视图 ──
@@ -1075,6 +1258,105 @@ function addNodeInternal(text, color) {
 function getSelectedNode() {
   if (selectedIds.size === 0) return null;
   return nodes.find(n => n.id === [...selectedIds][0]);
+}
+
+// ─── 图片操作（微信级压缩） ──────────────────────────────
+const IMG_TARGET_BYTES = 1.8 * 1024 * 1024; // base64 上限 ~1.8MB
+const IMG_MAX_PX = 1920;                    // 长边最大像素（微信标准）
+
+let imageFileInput = null;
+
+function getImageFileInput() {
+  if (!imageFileInput) {
+    imageFileInput = document.createElement('input');
+    imageFileInput.type = 'file';
+    imageFileInput.accept = 'image/*';
+    imageFileInput.style.display = 'none';
+    document.body.appendChild(imageFileInput);
+    imageFileInput.addEventListener('change', () => {
+      const file = imageFileInput.files[0];
+      if (!file) return;
+      const targetId = imageFileInput._targetNodeId;
+      imageFileInput._targetNodeId = null;
+      if (!targetId) return;
+      const reader = new FileReader();
+      reader.onload = () => {
+        const node = nodes.find(n => n.id === targetId);
+        if (node) {
+          pushUndo();
+          showToast('🖼️ 压缩中...');
+          compressToTarget(reader.result, (dataUrl) => {
+            node.image = dataUrl;
+            selectedIds.clear(); selectedIds.add(node.id);
+            render(); saveData();
+            const kb = Math.round(dataUrl.length / 1024);
+            showToast(`🖼️ 图片已添加 (${kb}KB)`);
+          });
+        }
+      };
+      reader.readAsDataURL(file);
+      imageFileInput.value = '';
+    });
+  }
+  return imageFileInput;
+}
+
+/** 微信同款：长边1920px → 迭代降质 → 兜底缩尺寸 */
+function compressToTarget(dataUrl, callback) {
+  const img = new Image();
+  img.onload = () => {
+    let w = img.naturalWidth, h = img.naturalHeight;
+
+    // 第一步：长边限制到 1920px
+    const longSide = Math.max(w, h);
+    if (longSide > IMG_MAX_PX) {
+      const scale = IMG_MAX_PX / longSide;
+      w = Math.round(w * scale);
+      h = Math.round(h * scale);
+    }
+
+    // 第二步：迭代 JPEG，quality 从 0.85 降到 0.3
+    tryQuality(w, h, 0.85);
+
+    function tryQuality(cw, ch, quality) {
+      const c = document.createElement('canvas');
+      c.width = cw; c.height = ch;
+      const cx = c.getContext('2d');
+      cx.drawImage(img, 0, 0, cw, ch);
+      const result = c.toDataURL('image/jpeg', quality);
+
+      if (result.length <= IMG_TARGET_BYTES || quality <= 0.3) {
+        if (result.length > IMG_TARGET_BYTES && cw > 400) {
+          // 最低质量仍超标 → 等比再缩
+          const s = Math.sqrt(IMG_TARGET_BYTES / result.length);
+          const nw = Math.round(cw * s * 0.9);
+          const nh = Math.round(ch * s * 0.9);
+          tryQuality(Math.max(nw, 200), Math.max(nh, 150), 0.55);
+        } else {
+          callback(result);
+        }
+      } else {
+        tryQuality(cw, ch, Math.round((quality - 0.1) * 100) / 100);
+      }
+    }
+  };
+  img.src = dataUrl;
+}
+
+function addImageToNode(nodeId) {
+  const input = getImageFileInput();
+  input._targetNodeId = nodeId;
+  input.click();
+}
+
+function removeImageFromNode(nodeId) {
+  const node = nodes.find(n => n.id === nodeId);
+  if (node && node.image) {
+    pushUndo();
+    node.image = null;
+    render(); saveData();
+    showToast('🗑️ 图片已删除');
+  }
 }
 
 function findVacantSpot(baseX, baseY, w, h, excludeId) {
@@ -1592,7 +1874,7 @@ function exportImage() {
   let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
   nodes.forEach(n => {
     const w = (n.width || NODE_MIN_W);
-    const h = (n.height || NODE_H);
+    const h = getNodeEffectiveHeight(n);
     // 基本矩形
     if (n.x < minX) minX = n.x;
     if (n.y < minY) minY = n.y;
@@ -1673,24 +1955,26 @@ function exportImage() {
     const x = n.x, y = n.y, w = n.width || NODE_MIN_W, h = n.height || NODE_H;
     const color = n.color || '#4fc3f7';
     const shape = n.shape || 'rect';
+    const effH = n.image ? h + IMG_MAX_H + IMG_PAD * 2 : h;
+    const imgAreaY = n.image ? y + h + IMG_PAD : 0;
 
     expCtx.save();
     expCtx.shadowColor = 'rgba(0,0,0,0.3)';
     expCtx.shadowBlur = 6;
     expCtx.shadowOffsetY = 2;
 
-    const grad = expCtx.createLinearGradient(x, y, x, y + h);
+    const grad = expCtx.createLinearGradient(x, y, x, y + effH);
     grad.addColorStop(0, '#1e2a4a');
     grad.addColorStop(1, '#162040');
 
     function drawBody() {
       switch (shape) {
-        case 'ellipse': expCtx.ellipse(x + w / 2, y + h / 2, w / 2, h / 2, 0, 0, Math.PI * 2); break;
+        case 'ellipse': expCtx.ellipse(x + w / 2, y + effH / 2, w / 2, effH / 2, 0, 0, Math.PI * 2); break;
         case 'diamond':
-          expCtx.moveTo(x + w / 2, y); expCtx.lineTo(x + w, y + h / 2);
-          expCtx.lineTo(x + w / 2, y + h); expCtx.lineTo(x, y + h / 2);
+          expCtx.moveTo(x + w / 2, y); expCtx.lineTo(x + w, y + effH / 2);
+          expCtx.lineTo(x + w / 2, y + effH); expCtx.lineTo(x, y + effH / 2);
           expCtx.closePath(); break;
-        default: expCtx.roundRect(x, y, w, h, 8); break;
+        default: expCtx.roundRect(x, y, w, effH, 8); break;
       }
     }
 
@@ -1698,11 +1982,11 @@ function exportImage() {
     expCtx.shadowBlur = 0;
 
     if (shape === 'rect') {
-      expCtx.beginPath(); expCtx.roundRect(x, y, 4, h, { upperLeft: 8, lowerLeft: 8 });
+      expCtx.beginPath(); expCtx.roundRect(x, y, 4, effH, { upperLeft: 8, lowerLeft: 8 });
       expCtx.fillStyle = color; expCtx.fill();
       expCtx.strokeStyle = 'rgba(255,255,255,0.06)';
       expCtx.lineWidth = 0.5;
-      expCtx.beginPath(); expCtx.roundRect(x, y, w, h, 8); expCtx.stroke();
+      expCtx.beginPath(); expCtx.roundRect(x, y, w, effH, 8); expCtx.stroke();
     } else {
       expCtx.strokeStyle = 'rgba(255,255,255,0.08)';
       expCtx.lineWidth = 0.5;
@@ -1725,6 +2009,25 @@ function exportImage() {
       expCtx.textAlign = 'right';
       expCtx.textBaseline = 'bottom';
       expCtx.fillText(MARKERS[n.marker], x + w + 4, y - 4);
+    }
+
+    // ── 图片渲染（导出）
+    if (n.image) {
+      const imgW = IMG_MAX_W, imgH = IMG_MAX_H;
+      const imgX = x + (w - imgW) / 2;
+      const imgY = imgAreaY;
+      expCtx.fillStyle = 'rgba(0,0,0,0.35)';
+      expCtx.beginPath(); expCtx.roundRect(imgX, imgY, imgW, imgH, 4); expCtx.fill();
+      expCtx.strokeStyle = 'rgba(255,255,255,0.1)';
+      expCtx.lineWidth = 0.5;
+      expCtx.beginPath(); expCtx.roundRect(imgX, imgY, imgW, imgH, 4); expCtx.stroke();
+      const img = getCachedImage(n.image);
+      if (img && img.complete && img.naturalWidth > 0) {
+        const sc = Math.min(imgW / img.naturalWidth, imgH / img.naturalHeight);
+        const dw = img.naturalWidth * sc, dh = img.naturalHeight * sc;
+        const dx = imgX + (imgW - dw) / 2, dy = imgY + (imgH - dh) / 2;
+        expCtx.drawImage(img, dx, dy, dw, dh);
+      }
     }
 
     // 折叠按钮

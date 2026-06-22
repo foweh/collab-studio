@@ -411,8 +411,8 @@ body {
           <option value="kg">🎤 酷狗音乐</option>
         </select>
         <select id="searchQuality" style="padding:6px 8px;border-radius:6px;border:1px solid var(--border);background:var(--card);color:var(--text);font-size:0.85rem;cursor:pointer">
-          <option value="320k">320k</option>
-          <option value="128k">128k</option>
+          <option value="128k">128k 快速</option>
+          <option value="320k">320k 高音质</option>
         </select>
         <input type="text" id="searchInput" placeholder="搜索歌曲、歌手…" autocomplete="off">
         <button class="btn-sm accent" id="btnSearch">搜索</button>
@@ -621,7 +621,7 @@ async function getAudioUrl(track, quality) {
   const src = track.source || 'tx';
   const prefix = SOURCE_MAP[src]?.urlPrefix || 'tx';
   const songId = track.songmid || track.id || track.hash || '';
-  const q = quality || $('#searchQuality')?.value || '320k';
+  const q = quality || $('#searchQuality')?.value || '128k';
 
   const resp = await fetch(`https://lxmusicapi.onrender.com/url/${prefix}/${songId}/${q}`, {
     headers: { 'X-Request-Key': 'share-v3' }
@@ -936,7 +936,11 @@ async function doSearch() {
     }
     renderSearchResults(lastSearchResults);
   } catch(e) {
-    searchResults.innerHTML = `<div class="empty-state"><p>❌ 搜索失败: ${e.message}</p><p style="font-size:0.75rem;margin-bottom:4px">浏览器直连被 CORS 拦截</p><p style="font-size:0.75rem;color:var(--accent)">💡 请通过服务器访问：<code>node server.js</code> 后打开 <code>http://localhost:3000/music-studio.html</code></p></div>`;
+    const isLocal = location.hostname === 'localhost' || location.hostname === '127.0.0.1';
+    const hint = isLocal
+      ? '<p style="font-size:0.75rem;color:var(--accent2)">⚠️ 服务器代理异常，请运行 node server.js 并刷新</p>'
+      : '<p style="font-size:0.75rem;color:var(--accent)">💡 请用服务器打开：<br><code>node server.js</code> → <code>http://localhost:3000/music-studio.html</code></p>';
+    searchResults.innerHTML = `<div class="empty-state"><p>❌ ${e.message}</p>${hint}</div>`;
   }
   btnSearch.disabled = false;
   btnSearch.textContent = '搜索';
