@@ -625,12 +625,9 @@ async function getAudioUrl(track, quality) {
 
   // Use local proxy to avoid CORS
   const resp = await fetch(`/api/music-url?source=${prefix}&songId=${encodeURIComponent(songId)}&quality=${q}`);
-  if (!resp.ok) {
-    const err = await resp.json().catch(() => ({}));
-    throw new Error(err.error || `HTTP ${resp.status}`);
-  }
   const data = await resp.json();
-  if (data.code !== 0) throw new Error(data.msg || '获取音频URL失败');
+  if (!resp.ok || data.error) throw new Error(data.error || `HTTP ${resp.status}`);
+  if (!data.url) throw new Error('未获取到播放地址');
   return data.url;
 }
 
