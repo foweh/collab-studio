@@ -355,6 +355,163 @@ body {
   transition: opacity 0.15s;
 }
 .drop-overlay.active { opacity: 1; }
+
+/* ====== Project Modal ====== */
+.modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,0.7);
+  z-index: 1000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.25s;
+}
+.modal-overlay.open { opacity: 1; pointer-events: auto; }
+
+.modal {
+  background: var(--panel-bg);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  width: min(720px, 94vw);
+  max-height: 82vh;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  box-shadow: 0 20px 60px rgba(0,0,0,0.5);
+}
+
+.modal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 20px;
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+.modal-header h3 { font-size: 1.05rem; }
+
+.modal-close {
+  width: 32px; height: 32px;
+  border: none; border-radius: 50%;
+  background: var(--border);
+  color: var(--text);
+  font-size: 1.1rem;
+  cursor: pointer;
+  display: flex; align-items: center; justify-content: center;
+}
+.modal-close:hover { background: var(--accent); }
+
+.modal-body {
+  flex: 1;
+  overflow-y: auto;
+  padding: 14px 20px;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+  gap: 12px;
+  align-content: start;
+}
+
+.project-card {
+  background: var(--card-bg);
+  border: 2px solid transparent;
+  border-radius: 10px;
+  padding: 10px;
+  cursor: pointer;
+  transition: var(--transition);
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.project-card:hover { border-color: var(--accent); }
+.project-card.active-project { border-color: var(--accent); box-shadow: 0 0 12px rgba(233,69,96,0.2); }
+
+.project-thumb {
+  width: 100%;
+  aspect-ratio: 16/9;
+  background: #000;
+  border-radius: 6px;
+  overflow: hidden;
+  display: flex; align-items: center; justify-content: center;
+}
+.project-thumb img {
+  width: 100%; height: 100%; object-fit: cover;
+}
+.project-thumb .no-thumb {
+  font-size: 1.8rem;
+  color: var(--text-dim);
+}
+
+.project-name {
+  font-size: 0.8rem;
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.project-meta {
+  font-size: 0.7rem;
+  color: var(--text-dim);
+  display: flex; justify-content: space-between;
+}
+.project-actions {
+  display: flex; gap: 5px; margin-top: 2px;
+}
+.project-actions .btn {
+  flex: 1;
+  font-size: 0.7rem;
+  padding: 4px 6px;
+  justify-content: center;
+}
+.proj-btn-danger { border-color: var(--accent) !important; color: var(--accent) !important; }
+.proj-btn-danger:hover { background: var(--accent) !important; color: #fff !important; }
+
+.modal-empty {
+  grid-column: 1 / -1;
+  text-align: center;
+  padding: 40px 20px;
+  color: var(--text-dim);
+}
+.modal-empty .icon { font-size: 3rem; margin-bottom: 10px; }
+
+/* Project name in toolbar */
+.toolbar .proj-name {
+  font-size: 0.8rem;
+  color: var(--text-dim);
+  max-width: 160px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  margin: 0 4px;
+  cursor: pointer;
+  padding: 4px 8px;
+  border-radius: 5px;
+  background: var(--card-bg);
+  border: 1px solid transparent;
+  transition: var(--transition);
+}
+.toolbar .proj-name:hover { border-color: var(--border); color: var(--text); }
+
+/* Toast */
+.toast {
+  position: fixed;
+  bottom: 24px;
+  left: 50%;
+  transform: translateX(-50%) translateY(80px);
+  background: var(--card-bg);
+  border: 1px solid var(--accent);
+  color: var(--text);
+  padding: 10px 22px;
+  border-radius: 8px;
+  font-size: 0.85rem;
+  z-index: 2000;
+  opacity: 0;
+  transition: all 0.3s ease;
+  pointer-events: none;
+}
+.toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
 </style>
 </head>
 <body>
@@ -362,13 +519,36 @@ body {
 <!-- ====== Drop Overlay ====== -->
 <div class="drop-overlay" id="dropOverlay">释放以加载视频</div>
 
+<!-- ====== Project Modal ====== -->
+<div class="modal-overlay" id="modalOverlay">
+  <div class="modal">
+    <div class="modal-header">
+      <h3>📂 历史项目</h3>
+      <button class="modal-close" id="modalClose">✕</button>
+    </div>
+    <div class="modal-body" id="modalBody">
+      <div class="modal-empty">
+        <div class="icon">📭</div>
+        <p>暂无保存的项目</p>
+        <p style="font-size:0.75rem;color:var(--text-dim)">截图后会自动创建项目</p>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ====== Toast ====== -->
+<div class="toast" id="toast"></div>
+
 <!-- ====== Toolbar ====== -->
 <div class="toolbar">
   <h1>🎬 <span>分镜</span>工具</h1>
+  <span class="proj-name" id="projNameDisplay" title="点击管理项目">未命名项目</span>
   <label class="btn" id="btnLoad" title="选择视频文件 (Ctrl+O)">
     📂 加载视频
     <input type="file" id="fileInput" accept="video/*" hidden>
   </label>
+  <button class="btn" id="btnProjects" title="浏览历史项目">📋 项目</button>
+  <button class="btn" id="btnNewProject" title="新建空白项目">➕ 新建</button>
   <button class="btn" id="btnClear" disabled title="清空所有分镜">🗑️ 清空</button>
   <button class="btn accent" id="btnExport" disabled title="导出所有分镜为 ZIP 包 (Ctrl+E)">📦 导出 ZIP</button>
   <span class="shot-count" id="shotCount">0 个镜头</span>
@@ -423,31 +603,162 @@ body {
 let shots = [];
 let shotIdCounter = 0;
 let videoLoaded = false;
+let currentProjectId = null;
+let currentProjectName = '未命名项目';
+let db = null; // IndexedDB instance
+let autoSaveTimer = null;
 
 // ====== DOM refs ======
 const $ = (sel) => document.querySelector(sel);
 const $$ = (sel) => document.querySelectorAll(sel);
 
-const video       = $('#video');
-const dropZone    = $('#dropZone');
-const dropOverlay = $('#dropOverlay');
-const fileInput   = $('#fileInput');
-const btnLoad     = $('#btnLoad');
-const btnPlay     = $('#btnPlay');
-const btnCapture  = $('#btnCapture');
-const btnClear    = $('#btnClear');
-const btnExport   = $('#btnExport');
-const btnRew      = $('#btnRew');
-const btnFwd      = $('#btnFwd');
-const btnPrevFrame= $('#btnPrevFrame');
-const btnNextFrame= $('#btnNextFrame');
-const progressBar = $('#progressBar');
-const progressFill= $('#progressFill');
-const timeCurrent = $('#timeCurrent');
-const timeDuration= $('#timeDuration');
-const grid        = $('#storyboardGrid');
-const shotCount   = $('#shotCount');
-const vidControls = $('#videoControls');
+const video         = $('#video');
+const dropZone      = $('#dropZone');
+const dropOverlay   = $('#dropOverlay');
+const fileInput     = $('#fileInput');
+const btnLoad       = $('#btnLoad');
+const btnPlay       = $('#btnPlay');
+const btnCapture    = $('#btnCapture');
+const btnClear      = $('#btnClear');
+const btnExport     = $('#btnExport');
+const btnRew        = $('#btnRew');
+const btnFwd        = $('#btnFwd');
+const btnPrevFrame  = $('#btnPrevFrame');
+const btnNextFrame  = $('#btnNextFrame');
+const progressBar   = $('#progressBar');
+const progressFill  = $('#progressFill');
+const timeCurrent   = $('#timeCurrent');
+const timeDuration  = $('#timeDuration');
+const grid          = $('#storyboardGrid');
+const shotCount     = $('#shotCount');
+const vidControls   = $('#videoControls');
+const modalOverlay  = $('#modalOverlay');
+const modalBody     = $('#modalBody');
+const modalClose    = $('#modalClose');
+const btnProjects   = $('#btnProjects');
+const btnNewProject = $('#btnNewProject');
+const projNameDisplay = $('#projNameDisplay');
+const toastEl       = $('#toast');
+
+// ====== IndexedDB ======
+const DB_NAME = 'fenjing_storyboard';
+const DB_VERSION = 1;
+
+function openDB() {
+  return new Promise((resolve, reject) => {
+    const req = indexedDB.open(DB_NAME, DB_VERSION);
+    req.onupgradeneeded = (e) => {
+      const db = e.target.result;
+      if (!db.objectStoreNames.contains('projects')) {
+        const projStore = db.createObjectStore('projects', { keyPath: 'id' });
+        projStore.createIndex('updatedAt', 'updatedAt', { unique: false });
+      }
+      if (!db.objectStoreNames.contains('shots')) {
+        const shotStore = db.createObjectStore('shots', { keyPath: 'id' });
+        shotStore.createIndex('projectId', 'projectId', { unique: false });
+        shotStore.createIndex('sortOrder', 'sortOrder', { unique: false });
+      }
+    };
+    req.onsuccess = (e) => {
+      db = e.target.result;
+      resolve(db);
+    };
+    req.onerror = () => reject(req.error);
+  });
+}
+
+function dbPut(storeName, obj) {
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(storeName, 'readwrite');
+    tx.objectStore(storeName).put(obj);
+    tx.oncomplete = () => resolve();
+    tx.onerror = () => reject(tx.error);
+  });
+}
+
+function dbGetAll(storeName, indexName, key) {
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(storeName, 'readonly');
+    const store = tx.objectStore(storeName);
+    const req = indexName ? store.index(indexName).getAll(key) : store.getAll();
+    req.onsuccess = () => resolve(req.result);
+    req.onerror = () => reject(req.error);
+  });
+}
+
+function dbDelete(storeName, id) {
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(storeName, 'readwrite');
+    tx.objectStore(storeName).delete(id);
+    tx.oncomplete = () => resolve();
+    tx.onerror = () => reject(tx.error);
+  });
+}
+
+async function dbClearShots(projectId) {
+  const shots = await dbGetAll('shots', 'projectId', projectId);
+  const tx = db.transaction('shots', 'readwrite');
+  const store = tx.objectStore('shots');
+  for (const s of shots) store.delete(s.id);
+  return new Promise((resolve, reject) => {
+    tx.oncomplete = () => resolve();
+    tx.onerror = () => reject(tx.error);
+  });
+}
+
+// ====== Auto-save ======
+let videoFileName = '';
+let projectCreatedAt = Date.now();
+
+function scheduleAutoSave() {
+  if (!currentProjectId) return;
+  clearTimeout(autoSaveTimer);
+  autoSaveTimer = setTimeout(() => persistShots(), 300);
+}
+
+async function persistShots() {
+  if (!currentProjectId || !db) return;
+  try {
+    // Delete existing shots for this project, then re-insert all
+    await dbClearShots(currentProjectId);
+    for (let i = 0; i < shots.length; i++) {
+      const s = shots[i];
+      await dbPut('shots', {
+        id: s.id,
+        projectId: currentProjectId,
+        time: s.time,
+        note: s.note,
+        img: s.img,
+        sortOrder: i,
+      });
+    }
+    // Update project metadata
+    await dbPut('projects', {
+      id: currentProjectId,
+      name: currentProjectName,
+      videoFileName: videoFileName || '',
+      shotCount: shots.length,
+      thumbnail: shots.length > 0 ? shots[0].img : '',
+      createdAt: projectCreatedAt,
+      updatedAt: Date.now(),
+    });
+  } catch (err) {
+    console.error('Auto-save failed:', err);
+  }
+}
+
+function updateProjDisplay() {
+  projNameDisplay.textContent = currentProjectName || '未命名项目';
+}
+
+// ====== Toast ======
+let toastTimer;
+function showToast(msg) {
+  clearTimeout(toastTimer);
+  toastEl.textContent = msg;
+  toastEl.classList.add('show');
+  toastTimer = setTimeout(() => toastEl.classList.remove('show'), 2500);
+}
 
 // ====== Format helpers ======
 function fmtTime(seconds) {
@@ -469,6 +780,12 @@ function loadVideoFile(file) {
   if (!file || !file.type.startsWith('video/')) {
     alert('请选择有效的视频文件');
     return;
+  }
+  videoFileName = file.name;
+  // Auto-name project after video file if still default
+  if (!currentProjectName || currentProjectName === '未命名项目' || currentProjectName.startsWith('未命名-')) {
+    currentProjectName = file.name.replace(/\.[^.]+$/, '');
+    updateProjDisplay();
   }
   const url = URL.createObjectURL(file);
   video.src = url;
@@ -574,6 +891,8 @@ btnNextFrame.addEventListener('click', () => {
 function captureFrame() {
   if (!videoLoaded) return;
 
+  ensureProject();
+
   const canvas = document.createElement('canvas');
   canvas.width = video.videoWidth || 640;
   canvas.height = video.videoHeight || 360;
@@ -582,15 +901,39 @@ function captureFrame() {
 
   const dataUrl = canvas.toDataURL('image/jpeg', 0.85);
   const shot = {
-    id: ++shotIdCounter,
+    id: Date.now() * 1000 + Math.floor(Math.random() * 1000),
     time: video.currentTime,
     img: dataUrl,
     note: '',
   };
   shots.push(shot);
   renderShots();
+  scheduleAutoSave();
   // Scroll to bottom
   grid.scrollTop = grid.scrollHeight;
+}
+
+function ensureProject() {
+  if (!currentProjectId) {
+    currentProjectId = 'proj_' + Date.now();
+    projectCreatedAt = Date.now();
+    if (!currentProjectName || currentProjectName === '未命名项目') {
+      currentProjectName = '未命名-' + new Date().toLocaleDateString('zh-CN');
+    }
+    updateProjDisplay();
+    // Save project metadata immediately (if DB is ready)
+    if (db) {
+      dbPut('projects', {
+        id: currentProjectId,
+        name: currentProjectName,
+        videoFileName: videoFileName || '',
+        shotCount: 0,
+        thumbnail: '',
+        createdAt: projectCreatedAt,
+        updatedAt: Date.now(),
+      }).catch(err => console.error('Create project failed:', err));
+    }
+  }
 }
 
 btnCapture.addEventListener('click', captureFrame);
@@ -630,6 +973,7 @@ function renderShots() {
     const noteEl = card.querySelector('[data-action="note"]');
     noteEl.addEventListener('input', () => {
       shots[idx].note = noteEl.value;
+      scheduleAutoSave();
     });
     // Auto-resize textarea
     noteEl.addEventListener('input', autoResizeTextarea);
@@ -673,13 +1017,16 @@ function autoResizeTextarea() {
 function deleteShot(index) {
   shots.splice(index, 1);
   renderShots();
+  scheduleAutoSave();
 }
 
-btnClear.addEventListener('click', () => {
+btnClear.addEventListener('click', async () => {
   if (shots.length === 0) return;
   if (confirm(`确定要清空全部 ${shots.length} 个分镜吗？`)) {
     shots = [];
     renderShots();
+    scheduleAutoSave();
+    await persistShots(); // immediately save empty state
   }
 });
 
@@ -720,6 +1067,7 @@ function handleDrop(e) {
   const [moved] = shots.splice(dragSrcIndex, 1);
   shots.splice(targetIndex, 0, moved);
   renderShots();
+  scheduleAutoSave();
 }
 
 // ====== Export ======
@@ -841,6 +1189,161 @@ function truncateText(ctx, text, maxWidth) {
   return truncated + '…';
 }
 
+// ====== Project Management ======
+async function createNewProject() {
+  // Save current project first if it has shots
+  if (currentProjectId && shots.length > 0) {
+    await persistShots();
+  }
+
+  // Reset to new project
+  currentProjectId = null;
+  currentProjectName = '未命名项目';
+  videoFileName = '';
+  projectCreatedAt = Date.now();
+  shotIdCounter = 0;
+  shots = [];
+  renderShots();
+  updateProjDisplay();
+  showToast('✅ 已创建新项目');
+}
+
+async function openProjectModal() {
+  modalOverlay.classList.add('open');
+  await renderProjectList();
+}
+
+function closeProjectModal() {
+  modalOverlay.classList.remove('open');
+}
+
+modalClose.addEventListener('click', closeProjectModal);
+modalOverlay.addEventListener('click', (e) => {
+  if (e.target === modalOverlay) closeProjectModal();
+});
+
+btnProjects.addEventListener('click', openProjectModal);
+projNameDisplay.addEventListener('click', openProjectModal);
+btnNewProject.addEventListener('click', createNewProject);
+
+async function renderProjectList() {
+  if (!db) return;
+
+  const projects = await dbGetAll('projects');
+  // Sort by updatedAt desc
+  projects.sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0));
+
+  if (projects.length === 0) {
+    modalBody.innerHTML = `
+      <div class="modal-empty">
+        <div class="icon">📭</div>
+        <p>暂无保存的项目</p>
+        <p style="font-size:0.75rem;color:var(--text-dim)">截图后会自动创建项目</p>
+      </div>`;
+    return;
+  }
+
+  modalBody.innerHTML = projects.map(p => {
+    const isActive = p.id === currentProjectId;
+    const date = new Date(p.updatedAt || p.createdAt).toLocaleDateString('zh-CN');
+    const thumbHtml = p.thumbnail
+      ? `<img src="${p.thumbnail}" alt="">`
+      : `<span class="no-thumb">🎬</span>`;
+
+    return `
+      <div class="project-card${isActive ? ' active-project' : ''}" data-proj-id="${p.id}">
+        <div class="project-thumb">${thumbHtml}</div>
+        <div class="project-name" title="${escapeHtml(p.name)}">${escapeHtml(p.name)}</div>
+        <div class="project-meta">
+          <span>${p.shotCount || 0} 镜头</span>
+          <span>${date}</span>
+        </div>
+        <div class="project-actions">
+          <button class="btn" data-action="load" data-proj-id="${p.id}">📂 加载</button>
+          <button class="btn proj-btn-danger" data-action="delete" data-proj-id="${p.id}">🗑️</button>
+        </div>
+      </div>`;
+  }).join('');
+
+  // Event delegation for load/delete buttons
+  modalBody.querySelectorAll('[data-action="load"]').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      loadProject(btn.dataset.projId);
+    });
+  });
+
+  modalBody.querySelectorAll('[data-action="delete"]').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      deleteProject(btn.dataset.projId);
+    });
+  });
+
+  // Click card to load
+  modalBody.querySelectorAll('.project-card').forEach(card => {
+    card.addEventListener('click', () => loadProject(card.dataset.projId));
+  });
+}
+
+async function loadProject(projectId) {
+  if (!db) return;
+
+  // Save current project first
+  if (currentProjectId && shots.length > 0) {
+    await persistShots();
+  }
+
+  // Load project metadata
+  const projects = await dbGetAll('projects');
+  const proj = projects.find(p => p.id === projectId);
+  if (!proj) return;
+
+  currentProjectId = proj.id;
+  currentProjectName = proj.name;
+  videoFileName = proj.videoFileName || '';
+  projectCreatedAt = proj.createdAt || Date.now();
+
+  // Load shots
+  const shotData = await dbGetAll('shots', 'projectId', projectId);
+  shotData.sort((a, b) => (a.sortOrder || 0) - (b.sortOrder || 0));
+
+  shots = shotData.map(s => ({
+    id: s.id,
+    time: s.time,
+    img: s.img,
+    note: s.note || '',
+  }));
+
+  renderShots();
+  updateProjDisplay();
+  closeProjectModal();
+
+  showToast(`📂 已加载「${currentProjectName}」· ${shots.length} 个镜头 · 请重新打开视频文件`);
+}
+
+async function deleteProject(projectId) {
+  if (!db) return;
+  if (!confirm('确定要删除此项目及其所有分镜吗？此操作不可恢复。')) return;
+
+  await dbClearShots(projectId);
+  await dbDelete('projects', projectId);
+
+  if (projectId === currentProjectId) {
+    // Deleted current project — reset
+    currentProjectId = null;
+    currentProjectName = '未命名项目';
+    videoFileName = '';
+    projectCreatedAt = Date.now();
+    shots = [];
+    renderShots();
+    updateProjDisplay();
+  }
+
+  await renderProjectList();
+  showToast('🗑️ 项目已删除');
+}
+
 // ====== Keyboard Shortcuts ======
 document.addEventListener('keydown', (e) => {
   // Don't trigger shortcuts when typing in textarea
@@ -898,8 +1401,19 @@ document.addEventListener('keydown', (e) => {
 });
 
 // ====== Init ======
-// Disable capture until video loads
-btnCapture.disabled = true;
+async function init() {
+  try {
+    await openDB();
+    console.log('IndexedDB ready');
+  } catch (err) {
+    console.error('IndexedDB init failed:', err);
+  }
+  // Always start with a blank workspace (new project is created on first capture)
+  updateProjDisplay();
+  btnCapture.disabled = true;
+}
+
+init();
 </script>
 </body>
 </html>
