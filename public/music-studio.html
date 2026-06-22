@@ -663,6 +663,7 @@ let playerBuffer = null;
 let playerStartTime = 0;
 let playerOffset = 0;
 let playerAnimFrame = null;
+let playId = 0;
 
 function stopPlayer() {
   if (currentSource) {
@@ -679,16 +680,21 @@ function stopPlayer() {
 
 async function playTrackUrl(trackInfo, url) {
   stopPlayer();
+  const myPlayId = ++playId;
   try {
-    playerBuffer = await fetchAudioBuffer(url);
-    playBuffer(trackInfo);
+    const buffer = await fetchAudioBuffer(url);
+    if (myPlayId !== playId) return; // newer request came in, discard
+    playerBuffer = buffer;
+    playBuffer(trackInfo, myPlayId);
   } catch(e) {
+    if (myPlayId !== playId) return;
     showToast('❌ 播放失败: ' + e.message);
     console.error(e);
   }
 }
 
-function playBuffer(trackInfo) {
+function playBuffer(trackInfo, myPlayId) {
+  if (myPlayId !== playId) return;
   const ctx = getAudioCtx();
   const source = ctx.createBufferSource();
   source.buffer = playerBuffer;
@@ -708,6 +714,7 @@ function playBuffer(trackInfo) {
   }
   updatePlayerProgress();
   source.onended = () => {
+    if (myPlayId !== playId) return;
     playerOffset = 0;
     stopPlayer();
   };
@@ -721,6 +728,7 @@ function updatePlayerProgress() {
   const pct = Math.min(100, (elapsed / dur) * 100);
   $('#playerProgressFill').style.width = pct + '%';
   $('#npTime').textContent = fmtTime(elapsed);
+  if (!currentSource) return; // stopped mid-update
   playerAnimFrame = requestAnimationFrame(updatePlayerProgress);
 }
 
@@ -730,7 +738,8 @@ function togglePlayer() {
     playerOffset = getAudioCtx().currentTime - playerStartTime;
     stopPlayer();
   } else if (playerBuffer && currentTrack) {
-    playBuffer(currentTrack);
+    const id = ++playId;
+    playBuffer(currentTrack, id);
   }
 }
 
@@ -741,7 +750,8 @@ $('#playerProgressWrap').addEventListener('click', (e) => {
   const pct = (e.clientX - rect.left) / rect.width;
   playerOffset = pct * playerBuffer.duration;
   if (currentSource) { stopPlayer(); currentSource = null; }
-  playBuffer(currentTrack);
+  const id = ++playId;
+  playBuffer(currentTrack, id);
 });
 $('#volumeSlider').addEventListener('input', () => {
   if (currentSource) currentSource.gainNode.gain.value = $('#volumeSlider').value / 100;
