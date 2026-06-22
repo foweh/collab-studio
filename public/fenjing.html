@@ -370,7 +370,7 @@ body {
     <input type="file" id="fileInput" accept="video/*" hidden>
   </label>
   <button class="btn" id="btnClear" disabled title="清空所有分镜">🗑️ 清空</button>
-  <button class="btn accent" id="btnExport" disabled title="导出分镜长图 (Ctrl+E)">📥 导出 PNG</button>
+  <button class="btn accent" id="btnExport" disabled title="导出所有分镜为 ZIP 包 (Ctrl+E)">📦 导出 ZIP</button>
   <span class="shot-count" id="shotCount">0 个镜头</span>
 </div>
 
@@ -417,6 +417,7 @@ body {
 
 </div>
 
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
 <script>
 // ====== State ======
 let shots = [];
@@ -722,106 +723,99 @@ function handleDrop(e) {
 }
 
 // ====== Export ======
-btnExport.addEventListener('click', () => {
+btnExport.addEventListener('click', async () => {
   if (shots.length === 0) return;
 
-  // Build a single canvas with all thumbnails stacked vertically
-  const thumbWidth = 640;
-  const thumbHeight = 360;
-  const padding = 20;
-  const headerHeight = 50;
-  const gap = 10;
+  btnExport.disabled = true;
+  btnExport.textContent = '⏳ 打包中...';
 
-  const canvas = document.createElement('canvas');
-  canvas.width = thumbWidth + padding * 2;
-  canvas.height = shots.length * (thumbHeight + headerHeight + gap) + padding * 2 + gap;
-  const ctx = canvas.getContext('2d');
+  try {
+    const zip = new JSZip();
+    // Use original video resolution for export, capped at 1920px wide
+    const maxW = 1920;
+    const origW = video.videoWidth || 640;
+    const origH = video.videoHeight || 360;
+    const scale = Math.min(1, maxW / origW);
+    const expW = Math.round(origW * scale);
+    const expH = Math.round(origH * scale);
 
-  // Background
-  ctx.fillStyle = '#1a1a2e';
-  ctx.fillRect(0, 0, canvas.width, canvas.height);
+    const loadImage = (src) => {
+      return new Promise((resolve) => {
+        const img = new Image();
+        img.onload = () => resolve(img);
+        img.onerror = () => resolve(null);
+        img.src = src;
+      });
+    };
 
-  let y = padding;
+    const images = await Promise.all(shots.map(s => loadImage(s.img)));
 
-  // Title
-  ctx.fillStyle = '#eaeaea';
-  ctx.font = 'bold 22px -apple-system, sans-serif';
-  ctx.fillText('🎬 视频分镜 Storyboard', padding, y + 30);
-  y += 60;
-
-  const loadImage = (src) => {
-    return new Promise((resolve) => {
-      const img = new Image();
-      img.onload = () => resolve(img);
-      img.onerror = () => resolve(null);
-      img.src = src;
-    });
-  };
-
-  Promise.all(shots.map(s => loadImage(s.img))).then(images => {
-    images.forEach((img, i) => {
+    for (let i = 0; i < shots.length; i++) {
       const shot = shots[i];
+      const img = images[i];
+      if (!img) continue;
 
-      // Card background
-      ctx.fillStyle = '#0f3460';
-      roundRect(ctx, padding, y, thumbWidth, thumbHeight + headerHeight, 10);
-      ctx.fill();
+      // Each shot gets its own canvas with overlay info
+      const canvas = document.createElement('canvas');
+      canvas.width = expW;
+      canvas.height = expH + 56; // extra space for info bar
+      const ctx = canvas.getContext('2d');
 
-      // Thumbnail
-      if (img) {
-        ctx.save();
-        // Clip rounded top corners
-        ctx.beginPath();
-        ctx.moveTo(padding + 10, y);
-        ctx.lineTo(padding + thumbWidth - 10, y);
-        ctx.quadraticCurveTo(padding + thumbWidth, y, padding + thumbWidth, y + 10);
-        ctx.lineTo(padding + thumbWidth, y + thumbHeight);
-        ctx.lineTo(padding, y + thumbHeight);
-        ctx.lineTo(padding, y + 10);
-        ctx.quadraticCurveTo(padding, y, padding + 10, y);
-        ctx.closePath();
-        ctx.clip();
-        ctx.drawImage(img, padding, y, thumbWidth, thumbHeight);
-        ctx.restore();
-      }
+      // Draw thumbnail (fill width, keep aspect)
+      ctx.fillStyle = '#000';
+      ctx.fillRect(0, 0, expW, expH + 56);
+      ctx.drawImage(img, 0, 0, expW, expH);
 
-      // Number badge
+      // Info bar at bottom
+      ctx.fillStyle = 'rgba(15, 52, 96, 0.92)';
+      ctx.fillRect(0, expH, expW, 56);
+
+      // Shot number
       ctx.fillStyle = '#e94560';
-      ctx.font = 'bold 14px -apple-system, sans-serif';
-      const numText = `#${i + 1}`;
-      const numW = ctx.measureText(numText).width + 14;
-      roundRect(ctx, padding + 10, y + 8, numW, 26, 13);
-      ctx.fill();
-      ctx.fillStyle = '#fff';
-      ctx.fillText(numText, padding + 17, y + 26);
+      ctx.font = 'bold 15px -apple-system, sans-serif';
+      ctx.fillText(`#${i + 1}`, 12, expH + 22);
 
       // Timecode
-      ctx.fillStyle = '#e94560';
-      ctx.font = 'bold 14px -apple-system, sans-serif';
-      ctx.fillText('⏱ ' + fmtTimeFull(shot.time), padding + 12, y + thumbHeight + 28);
+      const tc = fmtTimeFull(shot.time);
+      ctx.fillStyle = '#eaeaea';
+      ctx.font = 'bold 14px monospace';
+      ctx.fillText('⏱ ' + tc, 58, expH + 22);
 
-      // Note
+      // Note (if any)
       if (shot.note) {
         ctx.fillStyle = '#8899aa';
-        ctx.font = '13px -apple-system, sans-serif';
-        const noteText = truncateText(ctx, shot.note, thumbWidth - 24);
-        ctx.fillText(noteText, padding + 12, y + thumbHeight + 48);
+        ctx.font = '12px -apple-system, sans-serif';
+        const maxNoteW = expW - 220;
+        const noteText = truncateText(ctx, shot.note, maxNoteW);
+        ctx.fillText('📝 ' + noteText, 220, expH + 22);
       }
 
-      y += thumbHeight + headerHeight + gap;
-    });
+      // File name: shot_01_00-00-05.png
+      const pad = (n) => String(n).padStart(2, '0');
+      const mm = pad(Math.floor(shot.time / 60));
+      const ss = pad(Math.floor(shot.time % 60));
+      const ff = pad(Math.floor((shot.time % 1) * 30));
+      const filename = `shot_${pad(i + 1)}_${mm}-${ss}-${ff}.png`;
 
-    // Footer
-    ctx.fillStyle = '#555';
-    ctx.font = '11px -apple-system, sans-serif';
-    ctx.fillText(`共 ${shots.length} 个镜头 · ${new Date().toLocaleString()}`, padding, canvas.height - 15);
+      const blob = await new Promise(resolve => canvas.toBlob(resolve, 'image/png'));
+      zip.file(filename, blob);
+    }
 
-    // Download
+    // Generate zip and download
+    const zipBlob = await zip.generateAsync({ type: 'blob' });
     const link = document.createElement('a');
-    link.download = `storyboard_${Date.now()}.png`;
-    link.href = canvas.toDataURL('image/png');
+    link.download = `storyboard_${Date.now()}.zip`;
+    link.href = URL.createObjectURL(zipBlob);
     link.click();
-  });
+    URL.revokeObjectURL(link.href);
+
+  } catch (err) {
+    console.error('Export failed:', err);
+    alert('导出失败: ' + err.message);
+  } finally {
+    btnExport.disabled = false;
+    btnExport.textContent = '📦 导出 ZIP';
+  }
 });
 
 function roundRect(ctx, x, y, w, h, r) {
