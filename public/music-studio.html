@@ -553,45 +553,16 @@ function getAudioCtx() {
 // API — QQ Music Search
 // ==============================
 async function searchQQMusic(query, page = 1) {
-  // Try local proxy first (works when served from same origin)
-  let data;
-  try {
-    const proxyResp = await fetch('/api/music-search', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ source: 'tx', query, page })
-    });
-    if (proxyResp.ok) {
-      data = await proxyResp.json();
-    } else {
-      throw new Error('proxy failed');
-    }
-  } catch {
-    // Fallback: try direct (will fail with CORS)
-    const body = JSON.stringify({
-      req_1: {
-        method: 'DoSearchForQQMusicDesktop',
-        module: 'music.search.SearchCgiService',
-        param: { num_per_page: 30, page_num: page, query, search_type: 0 }
-      }
-    });
-    let resp;
-    try {
-      resp = await fetch('https://u.y.qq.com/cgi-bin/musicu.fcg', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body
-      });
-      if (!resp.ok) throw new Error('direct failed');
-    } catch {
-      resp = await fetch(`https://api.allorigins.win/raw?url=${encodeURIComponent('https://u.y.qq.com/cgi-bin/musicu.fcg')}`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body
-      });
-    }
-    data = await resp.json();
+  const resp = await fetch('/api/music-search', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ source: 'tx', query, page })
+  });
+  if (!resp.ok) {
+    const err = await resp.json().catch(() => ({}));
+    throw new Error(err.error || `HTTP ${resp.status}`);
   }
+  const data = await resp.json();
   const list = data.req_1?.data?.body?.song?.list || [];
   return list.map(item => ({
     id: item.id || item.songid,
@@ -611,26 +582,16 @@ async function searchQQMusic(query, page = 1) {
 // API — 酷狗搜索
 // ==============================
 async function searchKugou(query, page = 1) {
-  // Try local proxy first (works when served from same origin)
-  let data;
-  try {
-    const proxyResp = await fetch('/api/music-search', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ source: 'kg', query, page })
-    });
-    if (proxyResp.ok) {
-      data = await proxyResp.json();
-    } else {
-      throw new Error('proxy failed');
-    }
-  } catch {
-    // Fallback: direct fetch (will fail with CORS unless using a CORS extension)
-    const resp = await fetch(`https://songsearch.kugou.com/song_search_v2?keyword=${encodeURIComponent(query)}&page=${page}&pagesize=30&userid=0&clientver=&platform=WebFilter&filter=2&iscorrection=1&privilege_filter=0&area_code=1`, {
-      headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36' }
-    });
-    data = await resp.json();
+  const resp = await fetch('/api/music-search', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ source: 'kg', query, page })
+  });
+  if (!resp.ok) {
+    const err = await resp.json().catch(() => ({}));
+    throw new Error(err.error || `HTTP ${resp.status}`);
   }
+  const data = await resp.json();
   const list = data?.data?.lists || [];
   return list.map(item => ({
     id: item.FileHash || item.Grp?.[0]?.FileHash || '',

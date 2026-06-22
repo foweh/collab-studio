@@ -375,6 +375,14 @@ app.post('/api/upload-avatar', async (req, res) => {
   }
 });
 
+// ─── 音乐工作台（禁止缓存，必须在 static 之前） ──────────
+app.get('/music-studio.html', (req, res) => {
+  res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate');
+  res.setHeader('Pragma', 'no-cache');
+  res.setHeader('Expires', '0');
+  res.sendFile(path.join(__dirname, 'public', 'music-studio.html'));
+});
+
 app.use(express.static(path.join(__dirname, 'public')));
 app.use('/fenjing', express.static(path.join(__dirname, 'public/fenjing')));
 
@@ -458,34 +466,49 @@ app.get('/storyboard/*', (req, res) => {
 });
 
 // ─── 音乐搜索代理（解决浏览器 CORS 限制） ────────────────
+function httpJSON(url, opts = {}) {
+  return new Promise((resolve, reject) => {
+    const parsed = new URL(url);
+    const mod = parsed.protocol === 'https:' ? https : http;
+    const req = mod.request(url, opts, (resp) => {
+      let body = '';
+      resp.on('data', chunk => body += chunk);
+      resp.on('end', () => {
+        try { resolve(JSON.parse(body)); }
+        catch(e) { reject(new Error(`Invalid JSON: ${body.slice(0,200)}`)); }
+      });
+    });
+    req.on('error', reject);
+    req.setTimeout(15000, () => { req.destroy(); reject(new Error('timeout')); });
+    if (opts.body) req.write(opts.body);
+    req.end();
+  });
+}
+
 app.post('/api/music-search', async (req, res) => {
   try {
     const { source, query, page } = req.body;
     if (!query) return res.status(400).json({ error: 'Missing query' });
 
     if (source === 'kg') {
-      // 酷狗搜索
       const kgUrl = `https://songsearch.kugou.com/song_search_v2?keyword=${encodeURIComponent(query)}&page=${page || 1}&pagesize=30&userid=0&clientver=&platform=WebFilter&filter=2&iscorrection=1&privilege_filter=0&area_code=1`;
-      const resp = await fetch(kgUrl, {
+      const data = await httpJSON(kgUrl, {
         headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36' }
       });
-      const data = await resp.json();
       return res.json(data);
     } else {
-      // QQ音乐搜索
-      const qqUrl = 'https://u.y.qq.com/cgi-bin/musicu.fcg';
-      const resp = await fetch(qqUrl, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          req_1: {
-            method: 'DoSearchForQQMusicDesktop',
-            module: 'music.search.SearchCgiService',
-            param: { num_per_page: 30, page_num: page || 1, query, search_type: 0 }
-          }
-        })
+      const body = JSON.stringify({
+        req_1: {
+          method: 'DoSearchForQQMusicDesktop',
+          module: 'music.search.SearchCgiService',
+          param: { num_per_page: 30, page_num: page || 1, query, search_type: 0 }
+        }
       });
-      const data = await resp.json();
+      const data = await httpJSON('https://u.y.qq.com/cgi-bin/musicu.fcg', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(body) },
+        body
+      });
       return res.json(data);
     }
   } catch (err) {
