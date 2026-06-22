@@ -3,501 +3,521 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>剪辑师音乐工作台 — Music Studio</title>
+<title>剪辑师音乐工作台</title>
 <style>
-/* ====== Reset & Variables ====== */
+/* ====== Reset & Variables — 网易云风格 ====== */
 :root {
-  --bg: #0d1117;
-  --surface: #161b22;
-  --card: #1c2333;
-  --border: #30363d;
-  --accent: #58a6ff;
-  --accent2: #f78166;
-  --text: #e6edf3;
-  --text-dim: #8b949e;
-  --radius: 8px;
-  --gap: 10px;
-  --font: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  --red: #ec4141;
+  --red-hover: #c62f2f;
+  --red-light: #fff0f0;
+  --bg: #f5f5f5;
+  --card: #fff;
+  --sidebar-bg: #fafafa;
+  --text: #333;
+  --text2: #666;
+  --text3: #999;
+  --border: #e5e5e5;
+  --radius: 4px;
+  --radius-lg: 8px;
+  --shadow: 0 1px 4px rgba(0,0,0,.06);
+  --font: "Microsoft YaHei", "PingFang SC", -apple-system, sans-serif;
+  --transition: .2s ease;
 }
+
 * { margin:0; padding:0; box-sizing:border-box; }
+
 body {
-  font-family: var(--font);
-  background: var(--bg);
+  font: 13px var(--font);
   color: var(--text);
+  background: var(--bg);
   height: 100vh;
   display: flex;
   flex-direction: column;
   overflow: hidden;
+  -webkit-font-smoothing: antialiased;
 }
 
-/* ====== Top Nav ====== */
-.nav {
+/* ====== Top Header ====== */
+.topbar {
+  height: 50px;
+  background: linear-gradient(135deg, #ec4141 0%, #e03a3a 100%);
   display: flex;
   align-items: center;
-  gap: 2px;
-  padding: 8px 16px;
-  background: var(--surface);
-  border-bottom: 1px solid var(--border);
+  padding: 0 20px;
   flex-shrink: 0;
+  z-index: 100;
 }
-.nav h1 { font-size:1rem; font-weight:700; margin-right:16px; white-space:nowrap; }
-.nav h1 span { color: var(--accent2); }
-.nav-tab {
-  padding: 7px 18px;
+.topbar .logo {
+  font-size: 1.1rem;
+  font-weight: 700;
+  color: #fff;
+  margin-right: 30px;
+  white-space: nowrap;
+  letter-spacing: .5px;
+}
+.topbar .logo span { font-weight: 400; opacity: .85; }
+
+.topbar-nav { display: flex; gap: 2px; margin-right: auto; }
+.nav-btn {
+  padding: 6px 18px;
   border: none;
-  border-radius: 6px;
+  border-radius: 4px 4px 0 0;
   background: transparent;
-  color: var(--text-dim);
-  font-size: 0.85rem;
+  color: rgba(255,255,255,.75);
+  font-size: .85rem;
   cursor: pointer;
-  transition: 0.15s;
+  transition: var(--transition);
   white-space: nowrap;
 }
-.nav-tab:hover { background: var(--card); color: var(--text); }
-.nav-tab.active { background: var(--accent); color: #fff; font-weight:600; }
-.nav-right { margin-left: auto; display: flex; align-items: center; gap: 8px; }
-
-/* ====== Global Player Bar ====== */
-.player-bar {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 8px 16px;
-  background: var(--surface);
-  border-bottom: 1px solid var(--border);
-  flex-shrink: 0;
-  font-size: 0.8rem;
+.nav-btn:hover { color: #fff; background: rgba(255,255,255,.1); }
+.nav-btn.active { color: #ec4141; background: #fff; font-weight: 600; }
+.nav-btn .badge {
+  display: inline-block;
+  background: rgba(255,255,255,.3);
+  color: #fff;
+  font-size: .65rem;
+  padding: 0 5px;
+  border-radius: 8px;
+  margin-left: 4px;
+  min-width: 16px;
+  text-align: center;
 }
-.player-bar .now-playing {
+.nav-btn.active .badge { background: var(--red); color: #fff; }
+
+.topbar-actions { display:flex; gap:8px; align-items:center; }
+
+/* ====== Layout ====== */
+.main-wrap {
+  display: flex;
   flex: 1;
-  min-width: 0;
+  overflow: hidden;
+}
+
+.sidebar {
+  width: 200px;
+  background: var(--sidebar-bg);
+  border-right: 1px solid var(--border);
   display: flex;
-  align-items: center;
-  gap: 8px;
-}
-.player-bar .np-cover {
-  width: 36px; height: 36px;
-  border-radius: 4px;
-  object-fit: cover;
-  background: var(--border);
-  flex-shrink: 0;
-}
-.player-bar .np-info { min-width:0; }
-.player-bar .np-title {
-  font-weight: 600;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-.player-bar .np-artist {
-  color: var(--text-dim);
-  font-size: 0.75rem;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-.player-bar .np-time { color: var(--text-dim); font-size:0.75rem; white-space:nowrap; }
-.player-bar .btn-sm {
-  padding: 5px 10px;
-  border: 1px solid var(--border);
-  border-radius: 5px;
-  background: var(--card);
-  color: var(--text);
-  cursor: pointer;
-  font-size: 0.8rem;
-}
-.player-bar .btn-sm:hover { border-color: var(--accent); }
-.player-bar .btn-sm.accent { background: var(--accent); border-color:var(--accent); color:#fff; }
-.progress-wrap {
-  width: 120px;
-  height: 4px;
-  background: var(--border);
-  border-radius: 2px;
-  cursor: pointer;
-  flex-shrink: 0;
-}
-.progress-wrap .fill { height:100%; background:var(--accent); border-radius:2px; width:0%; }
-.volume-wrap { display:flex; align-items:center; gap:4px; }
-.volume-wrap input[type=range] { width:60px; accent-color:var(--accent); }
-
-/* ====== Main Layout ====== */
-.main { flex:1; display:flex; overflow:hidden; }
-
-/* ====== Panels ====== */
-.panel {
-  display: none;
   flex-direction: column;
-  flex: 1;
-  overflow: hidden;
+  flex-shrink: 0;
+  padding: 12px 0;
 }
-.panel.active { display: flex; }
-
-.panel-header {
+.sidebar-section { padding: 8px 16px; }
+.sidebar-title {
+  font-size: .7rem;
+  color: var(--text3);
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  margin-bottom: 6px;
+}
+.sidebar-item {
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 10px 16px;
-  border-bottom: 1px solid var(--border);
-  flex-shrink: 0;
-  flex-wrap: wrap;
+  padding: 8px 12px;
+  border-radius: var(--radius);
+  cursor: pointer;
+  font-size: .85rem;
+  color: var(--text);
+  transition: var(--transition);
+  margin: 2px 0;
 }
-.panel-header h3 { font-size:0.9rem; margin-right:auto; }
+.sidebar-item:hover { background: #eee; }
+.sidebar-item .count {
+  margin-left: auto;
+  font-size: .7rem;
+  color: var(--text3);
+}
+.sidebar-divider { height: 1px; background: var(--border); margin: 8px 16px; }
 
-.panel-body {
+.content {
   flex: 1;
   overflow-y: auto;
-  padding: 12px;
+  padding: 16px 24px;
+}
+
+/* ====== Panels ====== */
+.panel { display: none; }
+.panel.active { display: flex; flex-direction: column; gap: 16px; }
+
+.panel-title {
+  font-size: 1.2rem;
+  font-weight: 600;
+  color: var(--text);
+  padding-bottom: 8px;
+  border-bottom: 2px solid var(--red);
 }
 
 /* ====== Search ====== */
-.search-box {
+.search-bar {
   display: flex;
   gap: 8px;
+  align-items: center;
+  flex-wrap: wrap;
 }
-.search-box input {
-  flex: 1;
-  padding: 8px 12px;
+.search-bar select {
+  padding: 7px 10px;
   border: 1px solid var(--border);
-  border-radius: 6px;
-  background: var(--bg);
+  border-radius: var(--radius);
+  background: #fff;
   color: var(--text);
-  font-size: 0.9rem;
+  font-size: .85rem;
+  cursor: pointer;
   outline: none;
 }
-.search-box input:focus { border-color: var(--accent); }
+.search-bar select:focus { border-color: var(--red); }
+.search-bar input {
+  flex: 1;
+  min-width: 200px;
+  padding: 7px 12px;
+  border: 1px solid var(--border);
+  border-radius: 20px;
+  font-size: .9rem;
+  outline: none;
+  background: #fff;
+  transition: var(--transition);
+}
+.search-bar input:focus { border-color: var(--red); }
+.search-bar .btn { border-radius: 20px; }
 
-.result-list { display:flex; flex-direction:column; gap:6px; }
+.btn {
+  display: inline-flex; align-items: center; gap: 4px;
+  padding: 7px 16px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: #fff;
+  color: var(--text);
+  font-size: .85rem;
+  cursor: pointer;
+  transition: var(--transition);
+  white-space: nowrap;
+}
+.btn:hover { background: #f0f0f0; }
+.btn.accent { background: var(--red); color: #fff; border-color: var(--red); }
+.btn.accent:hover { background: var(--red-hover); }
+.btn:disabled { opacity: .5; cursor: not-allowed; }
+.btn-sm { padding: 4px 10px; font-size: .75rem; }
+
+/* ====== Hot Tags ====== */
+.hot-tags { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.hot-tags span { font-size: .75rem; color: var(--text3); }
+.hot-tags button {
+  padding: 3px 10px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: #fff;
+  font-size: .75rem;
+  color: var(--text2);
+  cursor: pointer;
+  transition: var(--transition);
+}
+.hot-tags button:hover { border-color: var(--red); color: var(--red); background: var(--red-light); }
+
+/* ====== Track Row ====== */
+.result-list { display: flex; flex-direction: column; }
+
 .track-row {
   display: flex;
   align-items: center;
-  gap: 10px;
-  padding: 8px;
-  border-radius: 6px;
-  cursor: pointer;
-  transition: 0.12s;
+  gap: 12px;
+  padding: 10px 12px;
+  background: var(--card);
+  border-radius: var(--radius);
+  transition: var(--transition);
+  cursor: default;
 }
-.track-row:hover { background: var(--card); }
-.track-row.playing { background: var(--card); border: 1px solid var(--accent); }
-.track-row .tr-cover {
+.track-row:nth-child(odd) { background: #fafafa; }
+.track-row:hover { background: #f0f0f0; }
+.track-row .idx { width: 28px; text-align: center; color: var(--text3); font-size: .8rem; flex-shrink: 0; }
+.tr-cover {
   width: 44px; height: 44px;
   border-radius: 4px;
   object-fit: cover;
-  background: var(--border);
+  background: #eee;
   flex-shrink: 0;
 }
-.track-row .tr-info { flex:1; min-width:0; }
-.track-row .tr-title { font-weight:600; font-size:0.85rem; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
-.track-row .tr-artist { color:var(--text-dim); font-size:0.75rem; }
-.track-row .tr-actions { display:flex; gap:4px; flex-shrink:0; }
-
-.btn-icon {
+.tr-info { flex: 1; min-width: 0; }
+.tr-title { font-size: .9rem; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.tr-artist { font-size: .75rem; color: var(--text3); margin-top: 2px; }
+.tr-source {
+  font-size: .6rem;
+  color: var(--red);
+  border: 1px solid var(--red);
+  border-radius: 2px;
+  padding: 0 4px;
+  margin-left: 6px;
+  vertical-align: middle;
+}
+.tr-actions { display: flex; gap: 6px; flex-shrink: 0; }
+.tr-actions button {
   width: 30px; height: 30px;
   border: 1px solid var(--border);
-  border-radius: 5px;
-  background: var(--card);
-  color: var(--text);
+  border-radius: 50%;
+  background: #fff;
   cursor: pointer;
-  font-size: 0.85rem;
-  display:flex; align-items:center; justify-content:center;
+  font-size: .8rem;
+  transition: var(--transition);
+  display: flex; align-items: center; justify-content: center;
 }
-.btn-icon:hover { border-color: var(--accent); }
-.btn-icon.fav { color: var(--accent2); }
-
-/* ====== Favorites ====== */
-.fav-actions { display:flex; gap:6px; }
-.empty-state {
-  text-align: center;
-  padding: 40px;
-  color: var(--text-dim);
-}
-.empty-state .icon { font-size:3rem; margin-bottom:10px; }
+.tr-actions button:hover { border-color: var(--red); background: var(--red-light); }
 
 /* ====== Editor ====== */
-.editor-layout { display:flex; flex-direction:column; height:100%; overflow:hidden; }
 .timeline-toolbar {
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 8px 12px;
-  border-bottom: 1px solid var(--border);
-  flex-shrink: 0;
+  gap: 10px;
   flex-wrap: wrap;
+  margin-bottom: 12px;
 }
-.timeline-toolbar .btn { padding:6px 12px; border:1px solid var(--border); border-radius:5px; background:var(--card); color:var(--text); cursor:pointer; font-size:0.8rem; }
-.timeline-toolbar .btn:hover { border-color:var(--accent); }
-.timeline-toolbar .btn.accent { background:var(--accent); border-color:var(--accent); color:#fff; }
-.timeline-toolbar .btn.danger { border-color:var(--accent2); color:var(--accent2); }
-.timeline-toolbar .btn.danger:hover { background:var(--accent2); color:#fff; }
-
-.track-list {
-  flex:1;
-  overflow-y: auto;
-  padding: 8px;
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
+.track-list { display: flex; flex-direction: column; gap: 10px; }
 .track-item {
   background: var(--card);
   border: 1px solid var(--border);
-  border-radius: 8px;
-  padding: 8px;
+  border-radius: var(--radius-lg);
+  padding: 12px;
 }
 .track-item-header {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  margin-bottom: 6px;
+  display: flex; align-items: center; gap: 8px;
+  margin-bottom: 8px;
 }
-.track-item-header .track-name {
-  flex: 1;
-  font-size: 0.8rem;
-  font-weight: 600;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-.track-item-header .track-time {
-  font-size: 0.7rem;
-  color: var(--text-dim);
-  white-space: nowrap;
-}
-.track-item-header .btn-icon { width:24px; height:24px; font-size:0.7rem; }
-
-.track-wave {
-  width: 100%;
-  height: 60px;
-  background: #000;
-  border-radius: 4px;
-  position: relative;
-  overflow: hidden;
-  cursor: pointer;
-}
-.track-wave canvas { width:100%; height:100%; display:block; }
-
-.track-controls {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  margin-top: 6px;
-  font-size: 0.75rem;
-}
-.track-controls label { color: var(--text-dim); white-space:nowrap; }
-.track-controls input[type=range] { flex:1; accent-color:var(--accent); min-width:50px; }
-.track-controls .trim-input {
-  width: 60px;
-  padding: 3px 6px;
-  border: 1px solid var(--border);
-  border-radius: 4px;
-  background: var(--bg);
-  color: var(--text);
-  font-size: 0.75rem;
-  text-align: center;
-}
+.track-name { font-weight: 600; font-size: .85rem; flex: 1; }
+.track-time { font-size: .7rem; color: var(--text3); font-family: monospace; }
+.track-wave { background: #111; border-radius: 4px; overflow: hidden; margin-bottom: 8px; }
+.track-wave canvas { display: block; width: 100%; }
+.track-controls { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; font-size: .75rem; }
+.track-controls label { color: var(--text3); white-space: nowrap; }
+.track-controls input[type=range] { width: 80px; accent-color: var(--red); }
+.trim-input { width: 58px; padding: 2px 4px; border: 1px solid var(--border); border-radius: 3px; font-size: .7rem; text-align: center; }
 
 /* ====== Export ====== */
 .export-card {
   background: var(--card);
-  border: 1px solid var(--border);
-  border-radius: 8px;
+  border-radius: var(--radius-lg);
   padding: 16px;
-  margin-bottom: 12px;
+  box-shadow: var(--shadow);
+  max-width: 500px;
 }
-.export-card h4 { margin-bottom:10px; font-size:0.9rem; }
-.export-card .row { display:flex; align-items:center; gap:10px; margin-bottom:8px; font-size:0.85rem; }
-.export-card .row label { color:var(--text-dim); width:80px; flex-shrink:0; }
-.export-card select, .export-card input {
-  padding: 6px 10px;
-  border: 1px solid var(--border);
-  border-radius: 5px;
-  background: var(--bg);
-  color: var(--text);
-  font-size: 0.85rem;
+.export-card .row {
+  display: flex; align-items: center; gap: 12px;
+  padding: 6px 0;
+}
+.export-card label { width: 60px; color: var(--text2); font-size: .85rem; }
+.export-card select {
+  padding: 5px 8px; border: 1px solid var(--border); border-radius: var(--radius);
+  font-size: .85rem; outline: none;
 }
 .export-progress {
-  margin-top: 10px;
-  height: 6px;
-  background: var(--border);
-  border-radius: 3px;
-  overflow: hidden;
-  display: none;
+  height: 6px; background: #eee; border-radius: 3px;
+  margin-top: 8px; display: none; overflow: hidden;
 }
-.export-progress .fill { height:100%; background:var(--accent2); width:0%; transition: width 0.2s; }
+.export-progress .fill {
+  height: 100%; background: var(--red); width: 0;
+  transition: width .3s;
+}
+
+/* ====== Empty State ====== */
+.empty-state { text-align: center; padding: 40px 20px; color: var(--text3); }
+.empty-state .icon { font-size: 3rem; margin-bottom: 8px; }
+.spinner {
+  width: 32px; height: 32px;
+  border: 3px solid var(--border);
+  border-top-color: var(--red);
+  border-radius: 50%;
+  animation: spin .8s linear infinite;
+  margin: 0 auto 10px;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+
+/* ====== Player Bar (bottom) ====== */
+.player-bar {
+  height: 56px;
+  background: #fff;
+  border-top: 1px solid var(--border);
+  display: flex;
+  align-items: center;
+  padding: 0 16px;
+  gap: 12px;
+  flex-shrink: 0;
+  box-shadow: 0 -2px 8px rgba(0,0,0,.04);
+  z-index: 100;
+}
+.player-bar .np-cover {
+  width: 40px; height: 40px;
+  border-radius: 4px;
+  object-fit: cover;
+  background: #eee;
+}
+.player-bar .np-info { min-width: 120px; max-width: 200px; }
+.player-bar .np-title { font-size: .85rem; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.player-bar .np-artist { font-size: .7rem; color: var(--text3); }
+.player-bar .np-time { font-size: .75rem; color: var(--text3); margin: 0 8px; white-space: nowrap; }
+.player-bar .progress-wrap {
+  flex: 1; height: 6px;
+  background: #eee; border-radius: 3px;
+  cursor: pointer;
+  position: relative;
+}
+.player-bar .progress-wrap .fill {
+  height: 100%;
+  background: var(--red);
+  border-radius: 3px;
+  width: 0;
+  transition: width .05s linear;
+}
+.player-bar .controls { display: flex; gap: 8px; align-items: center; }
+.player-bar input[type=range] { width: 80px; accent-color: var(--red); }
 
 /* ====== Toast ====== */
 .toast {
   position: fixed;
-  bottom: 20px;
+  bottom: 70px;
   left: 50%;
-  transform: translateX(-50%) translateY(80px);
-  background: var(--card);
-  border: 1px solid var(--accent);
-  color: var(--text);
-  padding: 8px 20px;
-  border-radius: 8px;
-  font-size: 0.85rem;
-  z-index: 999;
+  transform: translateX(-50%) translateY(20px);
+  background: #333;
+  color: #fff;
+  padding: 10px 24px;
+  border-radius: 20px;
+  font-size: .85rem;
+  z-index: 9999;
   opacity: 0;
-  transition: 0.3s;
   pointer-events: none;
+  transition: all .3s ease;
 }
-.toast.show { opacity:1; transform:translateX(-50%) translateY(0); }
+.toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
 
-/* Loading */
-.spinner {
-  display: inline-block;
-  width: 18px; height: 18px;
-  border: 2px solid var(--border);
-  border-top-color: var(--accent);
-  border-radius: 50%;
-  animation: spin 0.6s linear infinite;
-}
-@keyframes spin { to { transform: rotate(360deg); } }
+/* ====== Danger ====== */
+.btn.danger { color: var(--red); border-color: var(--red); }
+.btn.danger:hover { background: var(--red); color: #fff; }
 
-/* Scrollbar */
-::-webkit-scrollbar { width:6px; }
-::-webkit-scrollbar-track { background:transparent; }
-::-webkit-scrollbar-thumb { background:var(--border); border-radius:3px; }
-
-/* Responsive */
-@media (max-width: 640px) {
-  .nav { flex-wrap:wrap; }
-  .player-bar { flex-wrap:wrap; }
-  .progress-wrap { width:80px; }
+/* ====== Responsive ====== */
+@media (max-width: 768px) {
+  .sidebar { display: none; }
+  .topbar-nav .nav-btn { padding: 4px 10px; font-size: .75rem; }
+  .search-bar { flex-direction: column; }
+  .search-bar input { width: 100%; }
+  .track-row { flex-wrap: wrap; }
 }
 </style>
 </head>
 <body>
 
-<!-- ====== Nav ====== -->
-<nav class="nav">
-  <h1>🎵 <span>Music</span>Studio</h1>
-  <button class="nav-tab active" data-tab="search">🔍 搜索</button>
-  <button class="nav-tab" data-tab="fav">⭐ 收藏 <span id="favCount">0</span></button>
-  <button class="nav-tab" data-tab="editor">✂️ 剪辑 <span id="trackCount">0</span></button>
-  <button class="nav-tab" data-tab="export">📦 导出</button>
-</nav>
-
-<!-- ====== Player Bar ====== -->
-<div class="player-bar" id="playerBar">
-  <div class="now-playing">
-    <img class="np-cover" id="npCover" src="" alt="">
-    <div class="np-info">
-      <div class="np-title" id="npTitle">未在播放</div>
-      <div class="np-artist" id="npArtist">选择一首歌曲开始</div>
-    </div>
-  </div>
-  <span class="np-time" id="npTime">0:00</span>
-  <div class="progress-wrap" id="playerProgressWrap">
-    <div class="fill" id="playerProgressFill"></div>
-  </div>
-  <button class="btn-sm" id="btnPlayPause" disabled>▶️</button>
-  <div class="volume-wrap">
-    <span style="font-size:0.75rem">🔊</span>
-    <input type="range" id="volumeSlider" min="0" max="100" value="70">
+<!-- ====== Topbar ====== -->
+<div class="topbar">
+  <div class="logo">🎬 音乐<span>工作台</span></div>
+  <div class="topbar-nav">
+    <button class="nav-btn active" data-panel="search">🔍 搜索</button>
+    <button class="nav-btn" data-panel="fav">⭐ 收藏 <span class="badge" id="favCount">0</span></button>
+    <button class="nav-btn" data-panel="editor">✂️ 剪辑 <span class="badge" id="trackCount">0</span></button>
+    <button class="nav-btn" data-panel="export">📦 导出</button>
   </div>
 </div>
 
-<!-- ====== Main Content ====== -->
-<div class="main">
+<!-- ====== Main ====== -->
+<div class="main-wrap">
 
   <!-- SEARCH Panel -->
-  <div class="panel active" id="panel-search">
-    <div class="panel-header">
-      <h3>🔍 音乐搜索</h3>
-      <div class="search-box">
-        <select id="searchSource" style="padding:6px 10px;border-radius:6px;border:1px solid var(--border);background:var(--card);color:var(--text);font-size:0.85rem;cursor:pointer">
+  <div class="content">
+    <div class="panel active" id="panel-search">
+      <div class="search-bar">
+        <select id="searchSource">
           <option value="tx">🎵 QQ音乐</option>
           <option value="kg">🎤 酷狗音乐</option>
         </select>
-        <select id="searchQuality" style="padding:6px 8px;border-radius:6px;border:1px solid var(--border);background:var(--card);color:var(--text);font-size:0.85rem;cursor:pointer">
+        <select id="searchQuality">
           <option value="128k">128k 快速</option>
           <option value="320k">320k 高音质</option>
         </select>
         <input type="text" id="searchInput" placeholder="搜索歌曲、歌手…" autocomplete="off">
-        <button class="btn-sm accent" id="btnSearch">搜索</button>
+        <button class="btn accent" id="btnSearch">🔍 搜索</button>
       </div>
-    </div>
-    <div class="panel-body">
-      <div id="hotSection" style="margin-bottom:12px">
-        <div style="font-size:0.8rem;color:var(--text-dim);margin-bottom:6px">🔥 热门搜索</div>
-        <div id="hotTracks" style="display:flex;flex-wrap:wrap;gap:6px"></div>
+
+      <div id="hotSection">
+        <div class="hot-tags">
+          <span>🔥</span>
+          <div id="hotTracks" style="display:flex;flex-wrap:wrap;gap:6px"></div>
+        </div>
       </div>
+
       <div class="result-list" id="searchResults">
         <div class="empty-state"><div class="icon">🔍</div><p>输入关键词开始搜索</p></div>
       </div>
     </div>
-  </div>
 
-  <!-- FAVORITES Panel -->
-  <div class="panel" id="panel-fav">
-    <div class="panel-header">
-      <h3>⭐ 我的收藏</h3>
-      <div class="fav-actions">
-        <button class="btn-sm" id="btnFavToEditor">📥 全部加入编辑器</button>
-        <button class="btn-sm" id="btnClearFavs" style="border-color:var(--accent2);color:var(--accent2)">🗑️ 清空</button>
+    <!-- FAV Panel -->
+    <div class="panel" id="panel-fav">
+      <div style="display:flex;gap:8px;margin-bottom:12px">
+        <button class="btn accent btn-sm" id="btnFavToEditor">📥 全部加入编辑器</button>
+        <button class="btn danger btn-sm" id="btnClearFavs">🗑️ 清空收藏</button>
       </div>
-    </div>
-    <div class="panel-body">
       <div class="result-list" id="favList">
-        <div class="empty-state"><div class="icon">⭐</div><p>暂无收藏</p><p style="font-size:0.75rem;color:var(--text-dim)">在搜索结果中点击 ⭐ 收藏歌曲</p></div>
+        <div class="empty-state"><div class="icon">⭐</div><p>暂无收藏</p></div>
       </div>
     </div>
-  </div>
 
-  <!-- EDITOR Panel -->
-  <div class="panel" id="panel-editor">
-    <div class="editor-layout">
+    <!-- EDITOR Panel -->
+    <div class="panel" id="panel-editor">
       <div class="timeline-toolbar">
         <button class="btn accent" id="btnPlayMix">▶️ 预览混音</button>
         <button class="btn" id="btnStopMix">⏹️ 停止</button>
-        <span style="color:var(--text-dim);font-size:0.75rem" id="mixTimeDisplay">0:00.00</span>
-        <button class="btn danger" id="btnClearTracks" style="margin-left:auto">🗑️ 清空轨道</button>
+        <span style="font-size:.8rem;color:var(--text3);font-family:monospace" id="mixTimeDisplay">0:00.00</span>
+        <button class="btn danger btn-sm" id="btnClearTracks" style="margin-left:auto">🗑️ 清空轨道</button>
       </div>
       <div class="track-list" id="trackList">
-        <div class="empty-state"><div class="icon">✂️</div><p>暂无音频轨道</p><p style="font-size:0.75rem;color:var(--text-dim)">从搜索或收藏中添加歌曲</p></div>
+        <div class="empty-state"><div class="icon">✂️</div><p>暂无音频轨道</p></div>
       </div>
     </div>
-  </div>
 
-  <!-- EXPORT Panel -->
-  <div class="panel" id="panel-export">
-    <div class="panel-header"><h3>📦 导出成品音乐</h3></div>
-    <div class="panel-body" style="max-width:600px">
+    <!-- EXPORT Panel -->
+    <div class="panel" id="panel-export">
+      <div class="panel-title">📦 导出成品音乐</div>
       <div class="export-card">
-        <h4>导出设置</h4>
         <div class="row"><label>格式</label>
-          <select id="exportFormat"><option value="wav">WAV (无损)</option><option value="mp3">MP3 (压缩)</option></select>
+          <select id="exportFormat"><option value="wav">WAV 无损</option><option value="mp3">MP3</option></select>
         </div>
         <div class="row"><label>采样率</label>
           <select id="exportSampleRate"><option value="44100">44100 Hz</option><option value="48000">48000 Hz</option></select>
         </div>
         <div class="row"><label>轨道数</label>
-          <span id="exportTrackInfo">0 个轨道</span>
+          <span id="exportTrackInfo" style="color:var(--text2)">0 个轨道</span>
         </div>
-        <button class="btn-sm accent" id="btnExport" disabled style="margin-top:8px">🎧 开始导出</button>
+        <button class="btn accent btn-sm" id="btnExport" disabled style="margin-top:8px">🎧 开始导出</button>
         <div class="export-progress" id="exportProgress"><div class="fill"></div></div>
-        <div style="font-size:0.75rem;color:var(--text-dim);margin-top:6px" id="exportStatus"></div>
+        <div style="font-size:.75rem;color:var(--text3);margin-top:6px" id="exportStatus"></div>
       </div>
-      <div class="export-card">
-        <h4>📋 导出历史</h4>
-        <div id="exportHistory" style="font-size:0.8rem;color:var(--text-dim)">暂无导出记录</div>
+      <div style="margin-top:16px">
+        <div style="font-size:.8rem;color:var(--text3);margin-bottom:8px">📋 导出历史</div>
+        <div id="exportHistory" style="font-size:.75rem;color:var(--text3)"></div>
       </div>
     </div>
   </div>
-
 </div>
 
-<!-- Toast -->
+<!-- ====== Player Bar ====== -->
+<div class="player-bar" id="playerBar">
+  <img class="np-cover" id="npCover" src="" alt="">
+  <div class="np-info">
+    <div class="np-title" id="npTitle">未在播放</div>
+    <div class="np-artist" id="npArtist">选择一首歌曲开始</div>
+  </div>
+  <span class="np-time" id="npTime">0:00</span>
+  <div class="progress-wrap" id="playerProgressWrap">
+    <div class="fill" id="playerProgressFill"></div>
+  </div>
+  <div class="controls">
+    <button class="btn btn-sm accent" id="btnPlayPause">▶️</button>
+    <span style="font-size:.7rem">🔊</span>
+    <input type="range" id="volumeSlider" min="0" max="100" value="70">
+  </div>
+</div>
+
+<!-- ====== Toast ====== -->
 <div class="toast" id="toast"></div>
 
 <script>
-// ==============================
-// STATE
-// ==============================
+// ====== State ======
 let favorites = JSON.parse(localStorage.getItem('ms_favorites') || '[]');
-let editorTracks = []; // { id, title, artist, cover, url, buffer, duration, trimStart, trimEnd, volume, offset }
-let currentTrack = null; // currently playing track info
+let editorTracks = [];
+let currentTrack = null;
 let audioCtx = null;
 let currentSource = null;
 let mixSources = [];
@@ -505,15 +525,24 @@ let isMixPlaying = false;
 let mixStartTime = 0;
 let mixTimer = null;
 
-// ==============================
-// DOM REFS
-// ==============================
 const $ = s => document.querySelector(s);
 const $$ = s => document.querySelectorAll(s);
 
-// ==============================
-// UTILS
-// ==============================
+// ====== Nav Tabs ======
+$$('.nav-btn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    $$('.nav-btn').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    const name = btn.dataset.panel;
+    $$('.panel').forEach(p => p.classList.remove('active'));
+    const panel = document.getElementById('panel-' + name);
+    if (panel) panel.classList.add('active');
+    if (name === 'editor') { editorTracks.forEach((_, i) => drawWaveform(i)); }
+    if (name === 'export') updateExportInfo();
+  });
+});
+
+// ====== UTILS ======
 function fmtTime(sec) {
   if (!isFinite(sec) || sec < 0) return '0:00';
   const m = Math.floor(sec / 60);
@@ -540,18 +569,14 @@ function escapeHtml(s) {
   return d.innerHTML;
 }
 
-// ==============================
-// AUDIO CONTEXT (lazy)
-// ==============================
+// ====== Audio Context ======
 function getAudioCtx() {
   if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
   if (audioCtx.state === 'suspended') audioCtx.resume();
   return audioCtx;
 }
 
-// ==============================
-// API — QQ Music Search
-// ==============================
+// ====== API: QQ Music Search ======
 async function searchQQMusic(query, page = 1) {
   const resp = await fetch('/api/music-search', {
     method: 'POST',
@@ -578,9 +603,7 @@ async function searchQQMusic(query, page = 1) {
   }));
 }
 
-// ==============================
-// API — 酷狗搜索
-// ==============================
+// ====== API: Kugou Search ======
 async function searchKugou(query, page = 1) {
   const resp = await fetch('/api/music-search', {
     method: 'POST',
@@ -606,9 +629,7 @@ async function searchKugou(query, page = 1) {
   }));
 }
 
-// ==============================
-// API — Get Audio URL (multi-source)
-// ==============================
+// ====== API: Audio URL ======
 const SOURCE_MAP = {
   tx: { name: 'QQ音乐', urlPrefix: 'tx' },
   kg: { name: '酷狗音乐', urlPrefix: 'kg' },
@@ -622,8 +643,6 @@ async function getAudioUrl(track, quality) {
   const prefix = SOURCE_MAP[src]?.urlPrefix || 'tx';
   const songId = track.songmid || track.id || track.hash || '';
   const q = quality || $('#searchQuality')?.value || '128k';
-
-  // Use local proxy to avoid CORS
   const resp = await fetch(`/api/music-url?source=${prefix}&songId=${encodeURIComponent(songId)}&quality=${q}`);
   const data = await resp.json();
   if (!resp.ok || data.error) throw new Error(data.error || `HTTP ${resp.status}`);
@@ -631,9 +650,6 @@ async function getAudioUrl(track, quality) {
   return data.url;
 }
 
-// ==============================
-// API — Fetch audio as buffer
-// ==============================
 async function fetchAudioBuffer(url) {
   const resp = await fetch(url);
   if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
@@ -642,22 +658,10 @@ async function fetchAudioBuffer(url) {
   return await ctx.decodeAudioData(arrayBuf);
 }
 
-// ==============================
-// PLAYER
-// ==============================
-const playerBar = $('#playerBar');
-const npCover = $('#npCover');
-const npTitle = $('#npTitle');
-const npArtist = $('#npArtist');
-const npTime = $('#npTime');
-const playerProgressWrap = $('#playerProgressWrap');
-const playerProgressFill = $('#playerProgressFill');
-const btnPlayPause = $('#btnPlayPause');
-const volumeSlider = $('#volumeSlider');
-
+// ====== Player ======
 let playerBuffer = null;
 let playerStartTime = 0;
-let playerOffset = 0; // where we resumed from
+let playerOffset = 0;
 let playerAnimFrame = null;
 
 function stopPlayer() {
@@ -668,9 +672,9 @@ function stopPlayer() {
   cancelAnimationFrame(playerAnimFrame);
   playerAnimFrame = null;
   playerBuffer = null;
-  btnPlayPause.textContent = '▶️';
-  playerProgressFill.style.width = '0%';
-  npTime.textContent = '0:00';
+  $('#btnPlayPause').textContent = '▶️';
+  $('#playerProgressFill').style.width = '0%';
+  $('#npTime').textContent = '0:00';
 }
 
 async function playTrackUrl(trackInfo, url) {
@@ -688,32 +692,24 @@ function playBuffer(trackInfo) {
   const ctx = getAudioCtx();
   const source = ctx.createBufferSource();
   source.buffer = playerBuffer;
-
   const gainNode = ctx.createGain();
-  gainNode.gain.value = volumeSlider.value / 100;
+  gainNode.gain.value = $('#volumeSlider').value / 100;
   source.connect(gainNode);
   gainNode.connect(ctx.destination);
-
   source.start(0, playerOffset);
   currentSource = { source, gainNode, buffer: playerBuffer };
   playerStartTime = ctx.currentTime - playerOffset;
-  btnPlayPause.textContent = '⏸️';
-
-  // Update UI
+  $('#btnPlayPause').textContent = '⏸️';
   if (trackInfo) {
     currentTrack = trackInfo;
-    npCover.src = trackInfo.cover || '';
-    npTitle.textContent = trackInfo.title;
-    npArtist.textContent = trackInfo.artist;
+    $('#npCover').src = trackInfo.cover || '';
+    $('#npTitle').textContent = trackInfo.title;
+    $('#npArtist').textContent = trackInfo.artist;
   }
-
   updatePlayerProgress();
   source.onended = () => {
     playerOffset = 0;
     stopPlayer();
-    btnPlayPause.textContent = '▶️';
-    playerProgressFill.style.width = '0%';
-    npTime.textContent = '0:00';
   };
 }
 
@@ -723,47 +719,35 @@ function updatePlayerProgress() {
   const elapsed = ctx.currentTime - playerStartTime;
   const dur = currentSource.buffer.duration;
   const pct = Math.min(100, (elapsed / dur) * 100);
-  playerProgressFill.style.width = pct + '%';
-  npTime.textContent = fmtTime(elapsed);
+  $('#playerProgressFill').style.width = pct + '%';
+  $('#npTime').textContent = fmtTime(elapsed);
   playerAnimFrame = requestAnimationFrame(updatePlayerProgress);
 }
 
 function togglePlayer() {
   if (!currentTrack) return;
   if (currentSource) {
-    // Pause
     playerOffset = getAudioCtx().currentTime - playerStartTime;
     stopPlayer();
-    btnPlayPause.textContent = '▶️';
-    playerProgressFill.style.width = '0%';
-    npTime.textContent = '0:00';
   } else if (playerBuffer && currentTrack) {
     playBuffer(currentTrack);
   }
 }
 
-btnPlayPause.addEventListener('click', togglePlayer);
-playerProgressWrap.addEventListener('click', (e) => {
+$('#btnPlayPause').addEventListener('click', togglePlayer);
+$('#playerProgressWrap').addEventListener('click', (e) => {
   if (!playerBuffer) return;
-  const rect = playerProgressWrap.getBoundingClientRect();
+  const rect = $('#playerProgressWrap').getBoundingClientRect();
   const pct = (e.clientX - rect.left) / rect.width;
   playerOffset = pct * playerBuffer.duration;
-  if (currentSource) {
-    stopPlayer();
-    currentSource = null;
-  }
+  if (currentSource) { stopPlayer(); currentSource = null; }
   playBuffer(currentTrack);
 });
-volumeSlider.addEventListener('input', () => {
-  if (currentSource) {
-    currentSource.gainNode.gain.value = volumeSlider.value / 100;
-  }
+$('#volumeSlider').addEventListener('input', () => {
+  if (currentSource) currentSource.gainNode.gain.value = $('#volumeSlider').value / 100;
 });
-$('#playerBar').querySelector('.btn-sm:not(#btnPlayPause)')?.remove(); // cleanup ref
 
-// ==============================
-// FAVORITES
-// ==============================
+// ====== Favorites ======
 function saveFavorites() {
   localStorage.setItem('ms_favorites', JSON.stringify(favorites));
   updateFavCount();
@@ -776,15 +760,10 @@ function toggleFavorite(track) {
     showToast('已取消收藏');
   } else {
     favorites.push({
-      songmid: track.songmid,
-      id: track.id,
-      hash: track.hash,
-      title: track.title,
-      artist: track.artist,
-      cover: track.cover,
-      album: track.album,
-      duration: track.duration,
-      source: track.source || 'tx',
+      songmid: track.songmid, id: track.id, hash: track.hash,
+      title: track.title, artist: track.artist,
+      cover: track.cover, album: track.album,
+      duration: track.duration, source: track.source || 'tx',
     });
     showToast('⭐ 已收藏');
   }
@@ -798,13 +777,15 @@ function isFavorite(track) {
 }
 
 function updateFavCount() {
-  $('#favCount').textContent = favorites.length;
+  const el = $('#favCount');
+  if (el) el.textContent = favorites.length;
 }
 
 function renderFavorites() {
   const container = $('#favList');
+  if (!container) return;
   if (favorites.length === 0) {
-    container.innerHTML = '<div class="empty-state"><div class="icon">⭐</div><p>暂无收藏</p><p style="font-size:0.75rem;color:var(--text-dim)">在搜索结果中点击 ⭐ 收藏歌曲</p></div>';
+    container.innerHTML = '<div class="empty-state"><div class="icon">⭐</div><p>暂无收藏</p><p style="font-size:.75rem;color:var(--text3)">在搜索结果中点击 ⭐ 收藏歌曲</p></div>';
     return;
   }
   container.innerHTML = favorites.map((t, i) => {
@@ -813,16 +794,15 @@ function renderFavorites() {
     <div class="track-row">
       <img class="tr-cover" src="${t.cover || ''}" alt="" onerror="this.style.display='none'">
       <div class="tr-info">
-        <div class="tr-title">${escapeHtml(t.title)} <span style="font-size:0.65rem;color:var(--accent);background:var(--card);padding:1px 5px;border-radius:3px">${escapeHtml(srcLabel)}</span></div>
+        <div class="tr-title">${escapeHtml(t.title)} <span class="tr-source">${escapeHtml(srcLabel)}</span></div>
         <div class="tr-artist">${escapeHtml(t.artist)} · ${fmtTime(t.duration)}</div>
       </div>
       <div class="tr-actions">
-        <button class="btn-icon" data-action="play-fav" data-idx="${i}" title="试听">▶️</button>
-        <button class="btn-icon" data-action="add-editor-fav" data-idx="${i}" title="加入编辑器">➕</button>
-        <button class="btn-icon fav" data-action="unfav" data-idx="${i}" title="取消收藏">💔</button>
+        <button data-action="play-fav" data-idx="${i}" title="试听">▶️</button>
+        <button data-action="add-editor-fav" data-idx="${i}" title="加入编辑器">➕</button>
+        <button data-action="unfav" data-idx="${i}" title="取消收藏">💔</button>
       </div>
-    </div>
-  `;
+    </div>`;
   }).join('');
 
   container.querySelectorAll('[data-action="play-fav"]').forEach(btn => {
@@ -842,9 +822,7 @@ async function playFavorite(idx) {
   try {
     const url = await getAudioUrl(t);
     await playTrackUrl(t, url);
-  } catch(e) {
-    showToast('❌ 加载失败: ' + e.message);
-  }
+  } catch(e) { showToast('❌ 加载失败: ' + e.message); }
 }
 
 function removeFavorite(idx) {
@@ -860,22 +838,12 @@ async function addFavoriteToEditor(idx) {
     const url = await getAudioUrl(t);
     const buffer = await fetchAudioBuffer(url);
     addTrackToEditor({
-      id: t.songmid,
-      title: t.title,
-      artist: t.artist,
-      cover: t.cover,
-      url,
-      buffer,
-      duration: buffer.duration,
-      trimStart: 0,
-      trimEnd: buffer.duration,
-      volume: 100,
+      id: t.songmid, title: t.title, artist: t.artist, cover: t.cover, url, buffer,
+      duration: buffer.duration, trimStart: 0, trimEnd: buffer.duration, volume: 100,
       offset: editorTracks.reduce((max, tr) => Math.max(max, (tr.offset || 0) + (tr.trimEnd - tr.trimStart)), 0),
     });
     showToast('✅ 已添加到编辑器');
-  } catch(e) {
-    showToast('❌ 添加失败: ' + e.message);
-  }
+  } catch(e) { showToast('❌ 添加失败: ' + e.message); }
 }
 
 $('#btnFavToEditor').addEventListener('click', async () => {
@@ -886,16 +854,8 @@ $('#btnFavToEditor').addEventListener('click', async () => {
       const url = await getAudioUrl(t);
       const buffer = await fetchAudioBuffer(url);
       addTrackToEditor({
-        id: t.songmid,
-        title: t.title,
-        artist: t.artist,
-        cover: t.cover,
-        url,
-        buffer,
-        duration: buffer.duration,
-        trimStart: 0,
-        trimEnd: buffer.duration,
-        volume: 100,
+        id: t.songmid, title: t.title, artist: t.artist, cover: t.cover, url, buffer,
+        duration: buffer.duration, trimStart: 0, trimEnd: buffer.duration, volume: 100,
         offset: editorTracks.reduce((max, tr) => Math.max(max, (tr.offset || 0) + (tr.trimEnd - tr.trimStart)), 0),
       });
     } catch(e) { console.error(e); }
@@ -913,69 +873,61 @@ $('#btnClearFavs').addEventListener('click', () => {
   }
 });
 
-// ==============================
-// SEARCH
-// ==============================
-const searchInput = $('#searchInput');
-const btnSearch = $('#btnSearch');
-const searchResults = $('#searchResults');
+// ====== Search ======
 let lastSearchResults = [];
 
 async function doSearch() {
-  const q = searchInput.value.trim();
+  const q = $('#searchInput').value.trim();
   if (!q) return;
   const source = $('#searchSource').value;
-  btnSearch.disabled = true;
-  btnSearch.textContent = '...';
-  searchResults.innerHTML = '<div class="empty-state"><div class="spinner"></div><p>搜索中…</p></div>';
+  const btn = $('#btnSearch');
+  btn.disabled = true; btn.textContent = '...';
+  const container = $('#searchResults');
+  container.innerHTML = '<div class="empty-state"><div class="spinner"></div><p>搜索中…</p></div>';
   try {
-    if (source === 'kg') {
-      lastSearchResults = await searchKugou(q);
-    } else {
-      lastSearchResults = await searchQQMusic(q);
-    }
+    lastSearchResults = source === 'kg' ? await searchKugou(q) : await searchQQMusic(q);
     renderSearchResults(lastSearchResults);
   } catch(e) {
     const isLocal = location.hostname === 'localhost' || location.hostname === '127.0.0.1';
     const hint = isLocal
-      ? '<p style="font-size:0.75rem;color:var(--accent2)">⚠️ 服务器代理异常，请运行 node server.js 并刷新</p>'
-      : '<p style="font-size:0.75rem;color:var(--accent)">💡 请用服务器打开：<br><code>node server.js</code> → <code>http://localhost:3000/music-studio.html</code></p>';
-    searchResults.innerHTML = `<div class="empty-state"><p>❌ ${e.message}</p>${hint}</div>`;
+      ? '<p style="font-size:.75rem;color:var(--red)">⚠️ 服务器代理异常，请运行 node server.js 并刷新</p>'
+      : '<p style="font-size:.75rem;color:var(--red)">💡 请用服务器打开：<code>node server.js</code> → <code>http://127.0.0.1:3000/music-studio.html</code></p>';
+    container.innerHTML = `<div class="empty-state"><p>❌ ${e.message}</p>${hint}</div>`;
   }
-  btnSearch.disabled = false;
-  btnSearch.textContent = '搜索';
+  btn.disabled = false; btn.textContent = '🔍 搜索';
 }
 
 function renderSearchResults(results) {
+  const container = $('#searchResults');
   if (!results || results.length === 0) {
-    searchResults.innerHTML = '<div class="empty-state"><div class="icon">🔍</div><p>无搜索结果</p></div>';
+    container.innerHTML = '<div class="empty-state"><div class="icon">🔍</div><p>无搜索结果</p></div>';
     return;
   }
-  searchResults.innerHTML = results.map((t, i) => {
+  container.innerHTML = results.map((t, i) => {
     const fav = isFavorite(t);
     const srcLabel = SOURCE_MAP[t.source]?.name || t.source || '';
     return `
       <div class="track-row">
         <img class="tr-cover" src="${t.cover || ''}" alt="" onerror="this.style.display='none'">
         <div class="tr-info">
-          <div class="tr-title">${escapeHtml(t.title)} <span style="font-size:0.65rem;color:var(--accent);background:var(--card);padding:1px 5px;border-radius:3px">${escapeHtml(srcLabel)}</span></div>
+          <div class="tr-title">${escapeHtml(t.title)} <span class="tr-source">${escapeHtml(srcLabel)}</span></div>
           <div class="tr-artist">${escapeHtml(t.artist)} · ${fmtTime(t.duration)}</div>
         </div>
         <div class="tr-actions">
-          <button class="btn-icon" data-action="play" data-idx="${i}" title="试听">▶️</button>
-          <button class="btn-icon" data-action="fav-toggle" data-idx="${i}" title="${fav?'取消收藏':'收藏'}" style="color:${fav?'var(--accent2)':''}">${fav?'💛':'⭐'}</button>
-          <button class="btn-icon" data-action="add-editor" data-idx="${i}" title="加入编辑器">➕</button>
+          <button data-action="play" data-idx="${i}" title="试听">▶️</button>
+          <button data-action="fav-toggle" data-idx="${i}" title="${fav?'取消收藏':'收藏'}" style="color:${fav?'var(--red)':''}">${fav?'💛':'⭐'}</button>
+          <button data-action="add-editor" data-idx="${i}" title="加入编辑器">➕</button>
         </div>
       </div>`;
   }).join('');
 
-  searchResults.querySelectorAll('[data-action="play"]').forEach(btn => {
+  container.querySelectorAll('[data-action="play"]').forEach(btn => {
     btn.addEventListener('click', (e) => { e.stopPropagation(); playSearchResult(parseInt(btn.dataset.idx)); });
   });
-  searchResults.querySelectorAll('[data-action="fav-toggle"]').forEach(btn => {
+  container.querySelectorAll('[data-action="fav-toggle"]').forEach(btn => {
     btn.addEventListener('click', (e) => { e.stopPropagation(); toggleFavorite(results[parseInt(btn.dataset.idx)]); });
   });
-  searchResults.querySelectorAll('[data-action="add-editor"]').forEach(btn => {
+  container.querySelectorAll('[data-action="add-editor"]').forEach(btn => {
     btn.addEventListener('click', (e) => { e.stopPropagation(); addSearchToEditor(parseInt(btn.dataset.idx)); });
   });
 }
@@ -986,9 +938,7 @@ async function playSearchResult(idx) {
   try {
     const url = await getAudioUrl(t);
     await playTrackUrl(t, url);
-  } catch(e) {
-    showToast('❌ 加载失败: ' + e.message);
-  }
+  } catch(e) { showToast('❌ 加载失败: ' + e.message); }
 }
 
 async function addSearchToEditor(idx) {
@@ -998,42 +948,20 @@ async function addSearchToEditor(idx) {
     const url = await getAudioUrl(t);
     const buffer = await fetchAudioBuffer(url);
     addTrackToEditor({
-      id: t.songmid,
-      title: t.title,
-      artist: t.artist,
-      cover: t.cover,
-      url,
-      buffer,
-      duration: buffer.duration,
-      trimStart: 0,
-      trimEnd: buffer.duration,
-      volume: 100,
+      id: t.songmid, title: t.title, artist: t.artist, cover: t.cover, url, buffer,
+      duration: buffer.duration, trimStart: 0, trimEnd: buffer.duration, volume: 100,
       offset: editorTracks.reduce((max, tr) => Math.max(max, (tr.offset || 0) + (tr.trimEnd - tr.trimStart)), 0),
     });
     showToast('✅ 已添加到编辑器');
-  } catch(e) {
-    showToast('❌ 添加失败: ' + e.message);
-  }
+  } catch(e) { showToast('❌ 添加失败: ' + e.message); }
 }
 
-btnSearch.addEventListener('click', doSearch);
-searchInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') doSearch(); });
+$('#btnSearch').addEventListener('click', doSearch);
+$('#searchInput').addEventListener('keydown', (e) => { if (e.key === 'Enter') doSearch(); });
 
-// ==============================
-// EDITOR — Multi-track
-// ==============================
-const trackList = $('#trackList');
-const mixTimeDisplay = $('#mixTimeDisplay');
-const btnPlayMix = $('#btnPlayMix');
-const btnStopMix = $('#btnStopMix');
-const btnClearTracks = $('#btnClearTracks');
-
+// ====== Editor ======
 function addTrackToEditor(trackData) {
-  // Check duplicate
-  if (editorTracks.some(t => t.id === trackData.id && Math.abs(t.offset - trackData.offset) < 0.01)) {
-    // Duplicate, skip
-    return;
-  }
+  if (editorTracks.some(t => t.id === trackData.id && Math.abs(t.offset - trackData.offset) < 0.01)) return;
   editorTracks.push(trackData);
   renderEditorTracks();
   updateTrackCount();
@@ -1048,74 +976,64 @@ function removeTrackFromEditor(index) {
 }
 
 function updateTrackCount() {
-  $('#trackCount').textContent = editorTracks.length;
-  btnClearTracks.style.display = editorTracks.length > 0 ? '' : 'none';
+  const el = $('#trackCount');
+  if (el) el.textContent = editorTracks.length;
+  const btn = $('#btnClearTracks');
+  if (btn) btn.style.display = editorTracks.length > 0 ? '' : 'none';
 }
 
 function renderEditorTracks() {
+  const container = $('#trackList');
   if (editorTracks.length === 0) {
-    trackList.innerHTML = '<div class="empty-state"><div class="icon">✂️</div><p>暂无音频轨道</p><p style="font-size:0.75rem;color:var(--text-dim)">从搜索或收藏中添加歌曲</p></div>';
+    container.innerHTML = '<div class="empty-state"><div class="icon">✂️</div><p>暂无音频轨道</p><p style="font-size:.75rem;color:var(--text3)">从搜索或收藏中添加歌曲</p></div>';
     return;
   }
-
-  trackList.innerHTML = editorTracks.map((t, i) => `
+  container.innerHTML = editorTracks.map((t, i) => `
     <div class="track-item" data-idx="${i}">
       <div class="track-item-header">
-        <span style="font-size:1rem">🎵</span>
+        <span>🎵</span>
         <span class="track-name">${escapeHtml(t.title)} — ${escapeHtml(t.artist)}</span>
         <span class="track-time">${fmtTimeMs(t.trimStart)} → ${fmtTimeMs(t.trimEnd)} (${fmtTimeMs(t.trimEnd - t.trimStart)})</span>
-        <button class="btn-icon" data-action="remove-track" data-idx="${i}" title="移除">✕</button>
+        <button data-action="remove-track" data-idx="${i}" title="移除" style="border:none;background:none;cursor:pointer;font-size:1rem;color:var(--text3)">✕</button>
       </div>
-      <div class="track-wave" data-action="seek-track" data-idx="${i}">
-        <canvas id="waveCanvas${i}"></canvas>
-      </div>
+      <div class="track-wave"><canvas id="waveCanvas${i}"></canvas></div>
       <div class="track-controls">
         <label>🔊</label>
-        <input type="range" min="0" max="200" value="${t.volume}" data-action="vol" data-idx="${i}" title="音量">
-        <span style="font-size:0.7rem">${t.volume}%</span>
-        <label style="margin-left:8px">✂️ 起始</label>
+        <input type="range" min="0" max="200" value="${t.volume}" data-action="vol" data-idx="${i}">
+        <span style="font-size:.7rem">${t.volume}%</span>
+        <label>✂️ 起始</label>
         <input type="number" class="trim-input" value="${t.trimStart.toFixed(2)}" step="0.1" min="0" max="${t.duration.toFixed(2)}" data-action="trimStart" data-idx="${i}">
         <label>结束</label>
         <input type="number" class="trim-input" value="${t.trimEnd.toFixed(2)}" step="0.1" min="0" max="${t.duration.toFixed(2)}" data-action="trimEnd" data-idx="${i}">
-        <label style="margin-left:8px">⏱ 偏移</label>
+        <label>⏱ 偏移</label>
         <input type="number" class="trim-input" value="${t.offset.toFixed(2)}" step="0.1" min="0" data-action="offset" data-idx="${i}">
       </div>
     </div>
   `).join('');
 
-  // Draw waveforms
-  editorTracks.forEach((t, i) => {
-    drawWaveform(i);
-  });
+  editorTracks.forEach((t, i) => drawWaveform(i));
 
-  // Event bindings
-  trackList.querySelectorAll('[data-action="remove-track"]').forEach(btn => {
+  container.querySelectorAll('[data-action="remove-track"]').forEach(btn => {
     btn.addEventListener('click', (e) => { e.stopPropagation(); removeTrackFromEditor(parseInt(btn.dataset.idx)); });
   });
-  trackList.querySelectorAll('[data-action="vol"]').forEach(slider => {
+  container.querySelectorAll('[data-action="vol"]').forEach(slider => {
     slider.addEventListener('input', () => {
       const i = parseInt(slider.dataset.idx);
       editorTracks[i].volume = parseInt(slider.value);
       slider.nextElementSibling.textContent = slider.value + '%';
     });
   });
-  trackList.querySelectorAll('[data-action="trimStart"]').forEach(inp => {
+  container.querySelectorAll('[data-action="trimStart"],[data-action="trimEnd"]').forEach(inp => {
     inp.addEventListener('change', () => {
       const i = parseInt(inp.dataset.idx);
-      editorTracks[i].trimStart = Math.max(0, parseFloat(inp.value) || 0);
-      inp.value = editorTracks[i].trimStart.toFixed(2);
+      const t = editorTracks[i];
+      if (inp.dataset.action === 'trimStart') t.trimStart = Math.max(0, parseFloat(inp.value) || 0);
+      else t.trimEnd = Math.min(t.duration, parseFloat(inp.value) || t.duration);
+      inp.value = (inp.dataset.action === 'trimStart' ? t.trimStart : t.trimEnd).toFixed(2);
       renderEditorTracks();
     });
   });
-  trackList.querySelectorAll('[data-action="trimEnd"]').forEach(inp => {
-    inp.addEventListener('change', () => {
-      const i = parseInt(inp.dataset.idx);
-      editorTracks[i].trimEnd = Math.min(editorTracks[i].duration, parseFloat(inp.value) || editorTracks[i].duration);
-      inp.value = editorTracks[i].trimEnd.toFixed(2);
-      renderEditorTracks();
-    });
-  });
-  trackList.querySelectorAll('[data-action="offset"]').forEach(inp => {
+  container.querySelectorAll('[data-action="offset"]').forEach(inp => {
     inp.addEventListener('change', () => {
       const i = parseInt(inp.dataset.idx);
       editorTracks[i].offset = Math.max(0, parseFloat(inp.value) || 0);
@@ -1128,35 +1046,22 @@ function drawWaveform(idx) {
   const t = editorTracks[idx];
   const canvas = document.getElementById('waveCanvas' + idx);
   if (!canvas || !t.buffer) return;
-
   const container = canvas.parentElement;
   canvas.width = container.clientWidth;
   canvas.height = 60;
-
   const ctx = canvas.getContext('2d');
   const data = t.buffer.getChannelData(0);
-  const width = canvas.width;
-  const height = canvas.height;
+  const width = canvas.width, height = canvas.height;
   const step = Math.ceil(data.length / width);
-
-  // Draw trim region highlight
-  const totalDur = t.duration;
-  const trimStartX = (t.trimStart / totalDur) * width;
-  const trimEndX = (t.trimEnd / totalDur) * width;
-
+  const trimSX = (t.trimStart / t.duration) * width;
+  const trimEX = (t.trimEnd / t.duration) * width;
   ctx.clearRect(0, 0, width, height);
-
-  // Outside trim: dimmed
-  ctx.fillStyle = '#111';
+  ctx.fillStyle = '#e8e8e8';
   ctx.fillRect(0, 0, width, height);
-
-  // Inside trim: highlighted bg
-  ctx.fillStyle = '#1a2a1a';
-  ctx.fillRect(trimStartX, 0, trimEndX - trimStartX, height);
-
-  // Draw waveform
+  ctx.fillStyle = '#d4e8d4';
+  ctx.fillRect(trimSX, 0, trimEX - trimSX, height);
   ctx.beginPath();
-  ctx.strokeStyle = '#58a6ff';
+  ctx.strokeStyle = '#ec4141';
   ctx.lineWidth = 1;
   for (let x = 0; x < width; x++) {
     let min = 1, max = -1;
@@ -1167,80 +1072,57 @@ function drawWaveform(idx) {
       if (v < min) min = v;
       if (v > max) max = v;
     }
-    const y1 = (1 - max) * height / 2;
-    const y2 = (1 - min) * height / 2;
-    ctx.moveTo(x, y1);
-    ctx.lineTo(x, y2);
+    ctx.moveTo(x, (1 - max) * height / 2);
+    ctx.lineTo(x, (1 - min) * height / 2);
   }
   ctx.stroke();
-
-  // Trim markers
-  ctx.strokeStyle = '#f78166';
+  ctx.strokeStyle = '#999';
   ctx.lineWidth = 2;
-  ctx.beginPath();
-  ctx.moveTo(trimStartX, 0); ctx.lineTo(trimStartX, height);
-  ctx.stroke();
-  ctx.beginPath();
-  ctx.moveTo(trimEndX, 0); ctx.lineTo(trimEndX, height);
-  ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(trimSX, 0); ctx.lineTo(trimSX, height); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(trimEX, 0); ctx.lineTo(trimEX, height); ctx.stroke();
 }
 
-// ==============================
-// MIX PREVIEW
-// ==============================
+// ====== Mix Preview ======
 function stopMixPlayback() {
-  mixSources.forEach(s => {
-    try { s.source.stop(); } catch(e) {}
-  });
+  mixSources.forEach(s => { try { s.source.stop(); } catch(e) {} });
   mixSources = [];
   isMixPlaying = false;
   clearInterval(mixTimer);
   mixTimer = null;
-  mixTimeDisplay.textContent = '0:00.00';
-  btnPlayMix.textContent = '▶️ 预览混音';
+  $('#mixTimeDisplay').textContent = '0:00.00';
+  $('#btnPlayMix').textContent = '▶️ 预览混音';
 }
 
-btnPlayMix.addEventListener('click', () => {
+$('#btnPlayMix').addEventListener('click', () => {
   if (editorTracks.length === 0) { showToast('请先添加音频轨道'); return; }
   if (isMixPlaying) { stopMixPlayback(); return; }
-
   const ctx = getAudioCtx();
   const totalDuration = editorTracks.reduce((max, t) =>
     Math.max(max, (t.offset || 0) + (t.trimEnd - t.trimStart)), 0);
-
   mixSources = [];
   editorTracks.forEach(t => {
     const source = ctx.createBufferSource();
     source.buffer = t.buffer;
-
     const gainNode = ctx.createGain();
     gainNode.gain.value = t.volume / 100;
-
     source.connect(gainNode);
     gainNode.connect(ctx.destination);
-
-    const trimDur = t.trimEnd - t.trimStart;
-    source.start(ctx.currentTime + (t.offset || 0), t.trimStart, trimDur);
+    source.start(ctx.currentTime + (t.offset || 0), t.trimStart, t.trimEnd - t.trimStart);
     mixSources.push({ source, gainNode });
   });
-
   isMixPlaying = true;
   mixStartTime = ctx.currentTime;
-  btnPlayMix.textContent = '⏸️ 暂停';
-
+  $('#btnPlayMix').textContent = '⏸️ 暂停';
   mixTimer = setInterval(() => {
     const elapsed = ctx.currentTime - mixStartTime;
-    mixTimeDisplay.textContent = fmtTimeMs(elapsed);
-    if (elapsed >= totalDuration) {
-      stopMixPlayback();
-      btnPlayMix.textContent = '▶️ 预览混音';
-    }
+    $('#mixTimeDisplay').textContent = fmtTimeMs(elapsed);
+    if (elapsed >= totalDuration) stopMixPlayback();
   }, 100);
 });
 
-btnStopMix.addEventListener('click', stopMixPlayback);
+$('#btnStopMix').addEventListener('click', stopMixPlayback);
 
-btnClearTracks.addEventListener('click', () => {
+$('#btnClearTracks').addEventListener('click', () => {
   if (editorTracks.length === 0) return;
   if (confirm(`确定清空全部 ${editorTracks.length} 条轨道吗？`)) {
     stopMixPlayback();
@@ -1251,219 +1133,136 @@ btnClearTracks.addEventListener('click', () => {
   }
 });
 
-// ==============================
-// EXPORT
-// ==============================
-const btnExport = $('#btnExport');
-const exportProgress = $('#exportProgress');
-const exportProgressFill = exportProgress.querySelector('.fill');
-const exportStatus = $('#exportStatus');
-const exportTrackInfo = $('#exportTrackInfo');
-const exportHistory = $('#exportHistory');
-let exportHistoryItems = JSON.parse(localStorage.getItem('ms_export_history') || '[]');
-
+// ====== Export ======
 function updateExportInfo() {
-  exportTrackInfo.textContent = `${editorTracks.length} 个轨道`;
-  btnExport.disabled = editorTracks.length === 0;
+  const el = $('#exportTrackInfo');
+  if (el) el.textContent = `${editorTracks.length} 个轨道`;
+  const btn = $('#btnExport');
+  if (btn) btn.disabled = editorTracks.length === 0;
 }
+
+let exportHistoryItems = JSON.parse(localStorage.getItem('ms_export_history') || '[]');
 
 function addExportHistory(name, format) {
   exportHistoryItems.unshift({ name, format, time: new Date().toLocaleString() });
-  if (exportHistoryItems.length > 10) exportHistoryItems.pop();
+  if (exportHistoryItems.length > 20) exportHistoryItems.length = 20;
   localStorage.setItem('ms_export_history', JSON.stringify(exportHistoryItems));
   renderExportHistory();
 }
 
 function renderExportHistory() {
+  const container = $('#exportHistory');
+  if (!container) return;
   if (exportHistoryItems.length === 0) {
-    exportHistory.innerHTML = '<span style="font-size:0.8rem;color:var(--text-dim)">暂无导出记录</span>';
+    container.innerHTML = '<span>暂无导出记录</span>';
     return;
   }
-  exportHistory.innerHTML = exportHistoryItems.map(h =>
-    `<div style="margin-bottom:3px">📁 ${escapeHtml(h.name)} · ${h.format.toUpperCase()} · ${h.time}</div>`
+  container.innerHTML = exportHistoryItems.map(h =>
+    `<div style="padding:4px 0;border-bottom:1px solid var(--border)">📁 ${h.name} (${h.format.toUpperCase()}) · ${h.time}</div>`
   ).join('');
 }
 
-btnExport.addEventListener('click', async () => {
+$('#btnExport').addEventListener('click', async () => {
   if (editorTracks.length === 0) return;
-
   const format = $('#exportFormat').value;
   const sampleRate = parseInt($('#exportSampleRate').value);
-
-  btnExport.disabled = true;
-  btnExport.textContent = '⏳ 导出中…';
-  exportProgress.style.display = 'block';
-  exportProgressFill.style.width = '0%';
-  exportStatus.textContent = '准备中…';
+  const btn = $('#btnExport');
+  btn.disabled = true; btn.textContent = '⏳ 导出中…';
+  const progress = $('#exportProgress');
+  const progressFill = progress.querySelector('.fill');
+  progress.style.display = 'block';
+  progressFill.style.width = '0%';
+  const status = $('#exportStatus');
+  status.textContent = '准备中…';
 
   try {
     const totalDuration = editorTracks.reduce((max, t) =>
       Math.max(max, (t.offset || 0) + (t.trimEnd - t.trimStart)), 0);
-
-    if (totalDuration <= 0 || !isFinite(totalDuration)) {
-      throw new Error('无效的音频时长');
-    }
-
+    if (totalDuration <= 0) throw new Error('无效时长');
     const offlineCtx = new OfflineAudioContext(2, Math.ceil(sampleRate * totalDuration), sampleRate);
-
-    // Render each track
     for (const t of editorTracks) {
       const trimDur = t.trimEnd - t.trimStart;
       if (trimDur <= 0) continue;
-
       const source = offlineCtx.createBufferSource();
       source.buffer = t.buffer;
-
-      const gainNode = offlineCtx.createGain();
-      gainNode.gain.value = t.volume / 100;
-
-      source.connect(gainNode);
-      gainNode.connect(offlineCtx.destination);
-
-      source.start((t.offset || 0), t.trimStart, trimDur);
+      const gain = offlineCtx.createGain();
+      gain.gain.value = t.volume / 100;
+      source.connect(gain);
+      gain.connect(offlineCtx.destination);
+      source.start(t.offset || 0, t.trimStart, trimDur);
     }
-
-    exportStatus.textContent = '渲染音频中…';
-    exportProgressFill.style.width = '30%';
-
-    const renderedBuffer = await offlineCtx.startRendering();
-
-    exportProgressFill.style.width = '70%';
-    exportStatus.textContent = '编码中…';
-
-    let blob;
-    let ext;
-
-    if (format === 'mp3') {
-      // WAV to blob, then optional MP3 via lamejs
-      // For simplicity, we'll encode as WAV and note that MP3 would need an encoder
-      blob = encodeWAV(renderedBuffer, sampleRate);
-      ext = 'wav';
-      showToast('⚠️ MP3 编码器未加载，已导出为 WAV');
-    } else {
-      blob = encodeWAV(renderedBuffer, sampleRate);
-      ext = 'wav';
-    }
-
-    exportProgressFill.style.width = '100%';
-    exportStatus.textContent = '✅ 完成！';
-
-    const filename = `mixdown_${Date.now()}.${ext}`;
+    status.textContent = '渲染中…';
+    progressFill.style.width = '30%';
+    const rendered = await offlineCtx.startRendering();
+    progressFill.style.width = '70%';
+    status.textContent = '编码中…';
+    const blob = encodeWAV(rendered, sampleRate);
+    progressFill.style.width = '100%';
+    status.textContent = '✅ 完成';
+    const filename = `mixdown_${Date.now()}.wav`;
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
-    a.href = url;
-    a.download = filename;
-    a.click();
+    a.href = url; a.download = filename; a.click();
     URL.revokeObjectURL(url);
-
-    addExportHistory(filename, ext);
+    addExportHistory(filename, 'wav');
     showToast('✅ 导出成功: ' + filename);
-
-  } catch (err) {
-    console.error(err);
-    exportStatus.textContent = '❌ 失败: ' + err.message;
+  } catch(err) {
+    status.textContent = '❌ ' + err.message;
     showToast('❌ 导出失败: ' + err.message);
   } finally {
-    btnExport.disabled = editorTracks.length === 0;
-    btnExport.textContent = '🎧 开始导出';
-    setTimeout(() => {
-      exportProgress.style.display = 'none';
-      exportProgressFill.style.width = '0%';
-      exportStatus.textContent = '';
-    }, 3000);
+    btn.disabled = editorTracks.length === 0;
+    btn.textContent = '🎧 开始导出';
+    setTimeout(() => { progress.style.display = 'none'; progressFill.style.width = '0%'; status.textContent = ''; }, 3000);
   }
 });
 
-// WAV encoder
 function encodeWAV(audioBuffer, sampleRate) {
   const numChannels = audioBuffer.numberOfChannels;
   const length = audioBuffer.length;
   const buffer = new ArrayBuffer(44 + length * numChannels * 2);
   const view = new DataView(buffer);
-
-  // RIFF header
-  writeString(view, 0, 'RIFF');
+  const writeStr = (v, off, str) => { for (let i = 0; i < str.length; i++) v.setUint8(off + i, str.charCodeAt(i)); };
+  writeStr(view, 0, 'RIFF');
   view.setUint32(4, 36 + length * numChannels * 2, true);
-  writeString(view, 8, 'WAVE');
-  writeString(view, 12, 'fmt ');
+  writeStr(view, 8, 'WAVE');
+  writeStr(view, 12, 'fmt ');
   view.setUint32(16, 16, true);
-  view.setUint16(20, 1, true); // PCM
+  view.setUint16(20, 1, true);
   view.setUint16(22, numChannels, true);
   view.setUint32(24, sampleRate, true);
   view.setUint32(28, sampleRate * numChannels * 2, true);
   view.setUint16(32, numChannels * 2, true);
   view.setUint16(34, 16, true);
-  writeString(view, 36, 'data');
+  writeStr(view, 36, 'data');
   view.setUint32(40, length * numChannels * 2, true);
-
-  // Interleave channels and write
   let offset = 44;
   for (let i = 0; i < length; i++) {
     for (let ch = 0; ch < numChannels; ch++) {
       const sample = Math.max(-1, Math.min(1, audioBuffer.getChannelData(ch)[i]));
-      const int16 = sample < 0 ? sample * 0x8000 : sample * 0x7FFF;
-      view.setInt16(offset, int16, true);
+      view.setInt16(offset, sample < 0 ? sample * 0x8000 : sample * 0x7FFF, true);
       offset += 2;
     }
   }
-
   return new Blob([buffer], { type: 'audio/wav' });
 }
 
-function writeString(view, offset, str) {
-  for (let i = 0; i < str.length; i++) {
-    view.setUint8(offset + i, str.charCodeAt(i));
-  }
-}
-
-// ==============================
-// NAVIGATION
-// ==============================
-const navTabs = $$('.nav-tab');
-const panels = {
-  search: $('#panel-search'),
-  fav: $('#panel-fav'),
-  editor: $('#panel-editor'),
-  export: $('#panel-export'),
-};
-
-navTabs.forEach(tab => {
-  tab.addEventListener('click', () => {
-    const name = tab.dataset.tab;
-    navTabs.forEach(t => t.classList.remove('active'));
-    tab.classList.add('active');
-    Object.values(panels).forEach(p => p.classList.remove('active'));
-    panels[name].classList.add('active');
-
-    if (name === 'fav') renderFavorites();
-    if (name === 'editor') renderEditorTracks();
-    if (name === 'export') updateExportInfo();
-  });
-});
-
-// ==============================
-// ==============================
-// HOT TAGS
-// ==============================
-const HOT_TAGS = ['周杰伦', '林俊杰', '陈奕迅', '邓紫棋', 'Taylor Swift', '纯音乐', '电子', '古风', '说唱', '民谣'];
-
+// ====== Hot Tags ======
+const HOT_TAGS = ['周杰伦','林俊杰','陈奕迅','邓紫棋','Taylor Swift','纯音乐','电子','古风','说唱','民谣'];
 function renderHotTags() {
   const container = $('#hotTracks');
+  if (!container) return;
   container.innerHTML = HOT_TAGS.map(tag =>
-    `<button class="btn-sm" style="font-size:0.75rem;padding:3px 10px" data-tag="${tag}">${tag}</button>`
+    `<button data-tag="${tag}">${tag}</button>`
   ).join('');
-
   container.querySelectorAll('button').forEach(btn => {
     btn.addEventListener('click', () => {
-      searchInput.value = btn.dataset.tag;
+      $('#searchInput').value = btn.dataset.tag;
       doSearch();
     });
   });
 }
 
-// ==============================
-// INIT
-// ==============================
+// ====== Init ======
 function init() {
   renderHotTags();
   updateFavCount();
@@ -1472,12 +1271,10 @@ function init() {
   renderEditorTracks();
   updateExportInfo();
   renderExportHistory();
-  btnClearTracks.style.display = 'none';
+  const btn = $('#btnClearTracks');
+  if (btn) btn.style.display = 'none';
 }
-
 init();
-
-// Handle window resize for waveforms
 window.addEventListener('resize', () => {
   editorTracks.forEach((_, i) => drawWaveform(i));
 });
