@@ -553,32 +553,45 @@ function getAudioCtx() {
 // API — QQ Music Search
 // ==============================
 async function searchQQMusic(query, page = 1) {
-  const body = JSON.stringify({
-    req_1: {
-      method: 'DoSearchForQQMusicDesktop',
-      module: 'music.search.SearchCgiService',
-      param: { num_per_page: 30, page_num: page, query, search_type: 0 }
-    }
-  });
-
-  // Try direct first, fallback to CORS proxy
-  let resp;
+  // Try local proxy first (works when served from same origin)
+  let data;
   try {
-    resp = await fetch('https://u.y.qq.com/cgi-bin/musicu.fcg', {
+    const proxyResp = await fetch('/api/music-search', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body
+      body: JSON.stringify({ source: 'tx', query, page })
     });
-    if (!resp.ok) throw new Error('direct failed');
+    if (proxyResp.ok) {
+      data = await proxyResp.json();
+    } else {
+      throw new Error('proxy failed');
+    }
   } catch {
-    // Use a CORS proxy
-    resp = await fetch(`https://api.allorigins.win/raw?url=${encodeURIComponent('https://u.y.qq.com/cgi-bin/musicu.fcg')}`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body
+    // Fallback: try direct (will fail with CORS)
+    const body = JSON.stringify({
+      req_1: {
+        method: 'DoSearchForQQMusicDesktop',
+        module: 'music.search.SearchCgiService',
+        param: { num_per_page: 30, page_num: page, query, search_type: 0 }
+      }
     });
+    let resp;
+    try {
+      resp = await fetch('https://u.y.qq.com/cgi-bin/musicu.fcg', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body
+      });
+      if (!resp.ok) throw new Error('direct failed');
+    } catch {
+      resp = await fetch(`https://api.allorigins.win/raw?url=${encodeURIComponent('https://u.y.qq.com/cgi-bin/musicu.fcg')}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body
+      });
+    }
+    data = await resp.json();
   }
-  const data = await resp.json();
   const list = data.req_1?.data?.body?.song?.list || [];
   return list.map(item => ({
     id: item.id || item.songid,
@@ -598,10 +611,26 @@ async function searchQQMusic(query, page = 1) {
 // API — 酷狗搜索
 // ==============================
 async function searchKugou(query, page = 1) {
-  const resp = await fetch(`https://songsearch.kugou.com/song_search_v2?keyword=${encodeURIComponent(query)}&page=${page}&pagesize=30&userid=0&clientver=&platform=WebFilter&filter=2&iscorrection=1&privilege_filter=0&area_code=1`, {
-    headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36' }
-  });
-  const data = await resp.json();
+  // Try local proxy first (works when served from same origin)
+  let data;
+  try {
+    const proxyResp = await fetch('/api/music-search', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ source: 'kg', query, page })
+    });
+    if (proxyResp.ok) {
+      data = await proxyResp.json();
+    } else {
+      throw new Error('proxy failed');
+    }
+  } catch {
+    // Fallback: direct fetch (will fail with CORS unless using a CORS extension)
+    const resp = await fetch(`https://songsearch.kugou.com/song_search_v2?keyword=${encodeURIComponent(query)}&page=${page}&pagesize=30&userid=0&clientver=&platform=WebFilter&filter=2&iscorrection=1&privilege_filter=0&area_code=1`, {
+      headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36' }
+    });
+    data = await resp.json();
+  }
   const list = data?.data?.lists || [];
   return list.map(item => ({
     id: item.FileHash || item.Grp?.[0]?.FileHash || '',
@@ -946,7 +975,7 @@ async function doSearch() {
     }
     renderSearchResults(lastSearchResults);
   } catch(e) {
-    searchResults.innerHTML = `<div class="empty-state"><p>❌ 搜索失败: ${e.message}</p><p style="font-size:0.75rem">可能是网络或 API 限制，尝试切换音源</p></div>`;
+    searchResults.innerHTML = `<div class="empty-state"><p>❌ 搜索失败: ${e.message}</p><p style="font-size:0.75rem;margin-bottom:4px">浏览器直连被 CORS 拦截</p><p style="font-size:0.75rem;color:var(--accent)">💡 请通过服务器访问：<code>node server.js</code> 后打开 <code>http://localhost:3000/music-studio.html</code></p></div>`;
   }
   btnSearch.disabled = false;
   btnSearch.textContent = '搜索';
