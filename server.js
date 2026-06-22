@@ -518,6 +518,25 @@ app.post('/api/music-search', async (req, res) => {
   }
 });
 
+// ─── 音乐 URL 代理（解决 lxmusicapi CORS 限制） ────────────
+app.get('/api/music-url', async (req, res) => {
+  try {
+    const { source, songId, quality } = req.query;
+    if (!songId) return res.status(400).json({ error: 'Missing songId' });
+    const prefix = source || 'tx';
+    const q = quality || '128k';
+    const url = `https://lxmusicapi.onrender.com/url/${prefix}/${songId}/${q}`;
+    const data = await httpJSON(url, {
+      headers: { 'X-Request-Key': 'share-v3' }
+    });
+    if (data.code !== 0) throw new Error(data.msg || '获取音频URL失败');
+    res.json({ url: data.url });
+  } catch (err) {
+    console.error('[music-url]', err.message);
+    res.status(502).json({ error: err.message });
+  }
+});
+
 let broadcastDiscover = () => {};
 if (!JOIN_TARGET) {
   const udp = dgram.createSocket({ type: 'udp4', reuseAddr: true });

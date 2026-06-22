@@ -623,9 +623,12 @@ async function getAudioUrl(track, quality) {
   const songId = track.songmid || track.id || track.hash || '';
   const q = quality || $('#searchQuality')?.value || '128k';
 
-  const resp = await fetch(`https://lxmusicapi.onrender.com/url/${prefix}/${songId}/${q}`, {
-    headers: { 'X-Request-Key': 'share-v3' }
-  });
+  // Use local proxy to avoid CORS
+  const resp = await fetch(`/api/music-url?source=${prefix}&songId=${encodeURIComponent(songId)}&quality=${q}`);
+  if (!resp.ok) {
+    const err = await resp.json().catch(() => ({}));
+    throw new Error(err.error || `HTTP ${resp.status}`);
+  }
   const data = await resp.json();
   if (data.code !== 0) throw new Error(data.msg || '获取音频URL失败');
   return data.url;
