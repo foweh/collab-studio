@@ -517,9 +517,7 @@ body {
 // ====== State ======
 let favorites = JSON.parse(localStorage.getItem('ms_favorites') || '[]');
 let editorTracks = [];
-let currentTrack = null;
 let audioCtx = null;
-let currentSource = null;
 let mixSources = [];
 let isMixPlaying = false;
 let mixStartTime = 0;
@@ -658,104 +656,117 @@ async function fetchAudioBuffer(url) {
   return await ctx.decodeAudioData(arrayBuf);
 }
 
-// ====== Player ======
-let playerBuffer = null;
-let playerStartTime = 0;
-let playerOffset = 0;
-let playerAnimFrame = null;
-let playId = 0;
+// ====== Player (state machine) ======
+const Player = {
+  _state: 'idle', _track: null, _buffer: null,
+  _source: null, _gain: null, _startTime: 0, _offset: 0,
+  _loadId: 0, _raf: null,
 
-function stopPlayer() {
-  if (currentSource) {
-    try { currentSource.stop(); } catch(e) {}
-    currentSource = null;
+  _setState(s) { this._state = s; this._updateUI(); },
+  _updateUI() {
+    $('#btnPlayPause').textContent = this._state === 'playing' ? '⏸️' : '▶️';
+  },
+  _updateTrackUI(t) {
+    $('#npCover').src = t?.cover || '';
+    $('#npTitle').textContent = t?.title || '未在播放';
+    $('#npArtist').textContent = t?.artist || '选择一首歌曲开始';
+  },
+
+  _animLoop() {
+    if (this._state !== 'playing' || !this._source) { this._raf = null; return; }
+    const elapsed = getAudioCtx().currentTime - this._startTime;
+    const dur = this._buffer?.duration || 1;
+    $('#playerProgressFill').style.width = Math.min(100, (elapsed/dur)*100) + '%';
+    $('#npTime').textContent = fmtTime(elapsed);
+    this._raf = requestAnimationFrame(() => this._animLoop());
+  },
+
+  _stopSource() {
+    if (this._source) { try { this._source.stop(); } catch(_){} this._source = null; }
+    if (this._raf) { cancelAnimationFrame(this._raf); this._raf = null; }
+  },
+
+  stop() {
+    this._setState('idle'); this._stopSource();
+    this._buffer = null; this._track = null; this._offset = 0;
+    this._loadId++;
+    $('#playerProgressFill').style.width = '0%'; $('#npTime').textContent = '0:00';
+    this._updateTrackUI(null);
+  },
+
+  async play(track) {
+    if (!track) return;
+    this.stop(); this._track = track;
+    this._state = 'loading'; this._loadId++;
+    const myLoadId = this._loadId;
+    this._updateTrackUI(track);
+
+    try {
+      const url = await getAudioUrl(track);
+      if (myLoadId !== this._loadId) return;
+      const resp = await fetch(url);
+      if (myLoadId !== this._loadId) return;
+      if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+      const buf = await resp.arrayBuffer();
+      if (myLoadId !== this._loadId) return;
+      const ctx = getAudioCtx();
+      const audioBuf = await ctx.decodeAudioData(buf);
+      if (myLoadId !== this._loadId) return;
+      this._buffer = audioBuf; this._offset = 0;
+      this._startFrom(0);
+    } catch (e) {
+      if (myLoadId !== this._loadId) return;
+      this.stop(); showToast('❌ 播放失败: ' + e.message);
+    }
+  },
+
+  _startFrom(offset) {
+    this._stopSource();
+    const ctx = getAudioCtx();
+    const src = ctx.createBufferSource(); src.buffer = this._buffer;
+    const g = ctx.createGain(); g.gain.value = $('#volumeSlider').value / 100;
+    src.connect(g); g.connect(ctx.destination);
+    src.start(0, offset);
+    this._source = src; this._gain = g;
+    this._startTime = ctx.currentTime - offset; this._offset = offset;
+    this._setState('playing'); this._animLoop();
+    const myLoadId = this._loadId;
+    src.onended = () => { if (myLoadId === this._loadId) this.stop(); };
+  },
+
+  toggle() {
+    if (this._state === 'playing') {
+      this._offset = getAudioCtx().currentTime - this._startTime;
+      this._stopSource();
+      this._state = 'paused';
+      $('#playerProgressFill').style.width = '0%'; $('#npTime').textContent = '0:00';
+      this._updateUI();
+    } else if (this._state === 'paused' && this._buffer) {
+      this._startFrom(this._offset);
+    }
+  },
+
+  seek(time) {
+    if (!this._buffer) return;
+    this._startFrom(Math.max(0, Math.min(time, this._buffer.duration)));
+  },
+
+  updateVolume() {
+    if (this._gain) this._gain.gain.value = $('#volumeSlider').value / 100;
   }
-  cancelAnimationFrame(playerAnimFrame);
-  playerAnimFrame = null;
-  playerBuffer = null;
-  $('#btnPlayPause').textContent = '▶️';
-  $('#playerProgressFill').style.width = '0%';
-  $('#npTime').textContent = '0:00';
-}
+};
 
-async function playTrackUrl(trackInfo, url) {
-  stopPlayer();
-  const myPlayId = ++playId;
-  try {
-    const buffer = await fetchAudioBuffer(url);
-    if (myPlayId !== playId) return; // newer request came in, discard
-    playerBuffer = buffer;
-    playBuffer(trackInfo, myPlayId);
-  } catch(e) {
-    if (myPlayId !== playId) return;
-    showToast('❌ 播放失败: ' + e.message);
-    console.error(e);
-  }
-}
-
-function playBuffer(trackInfo, myPlayId) {
-  if (myPlayId !== playId) return;
-  const ctx = getAudioCtx();
-  const source = ctx.createBufferSource();
-  source.buffer = playerBuffer;
-  const gainNode = ctx.createGain();
-  gainNode.gain.value = $('#volumeSlider').value / 100;
-  source.connect(gainNode);
-  gainNode.connect(ctx.destination);
-  source.start(0, playerOffset);
-  currentSource = { source, gainNode, buffer: playerBuffer };
-  playerStartTime = ctx.currentTime - playerOffset;
-  $('#btnPlayPause').textContent = '⏸️';
-  if (trackInfo) {
-    currentTrack = trackInfo;
-    $('#npCover').src = trackInfo.cover || '';
-    $('#npTitle').textContent = trackInfo.title;
-    $('#npArtist').textContent = trackInfo.artist;
-  }
-  updatePlayerProgress();
-  source.onended = () => {
-    if (myPlayId !== playId) return;
-    playerOffset = 0;
-    stopPlayer();
-  };
-}
-
-function updatePlayerProgress() {
-  if (!currentSource || !currentSource.buffer) return;
-  const ctx = getAudioCtx();
-  const elapsed = ctx.currentTime - playerStartTime;
-  const dur = currentSource.buffer.duration;
-  const pct = Math.min(100, (elapsed / dur) * 100);
-  $('#playerProgressFill').style.width = pct + '%';
-  $('#npTime').textContent = fmtTime(elapsed);
-  if (!currentSource) return; // stopped mid-update
-  playerAnimFrame = requestAnimationFrame(updatePlayerProgress);
-}
-
-function togglePlayer() {
-  if (!currentTrack) return;
-  if (currentSource) {
-    playerOffset = getAudioCtx().currentTime - playerStartTime;
-    stopPlayer();
-  } else if (playerBuffer && currentTrack) {
-    const id = ++playId;
-    playBuffer(currentTrack, id);
-  }
-}
-
-$('#btnPlayPause').addEventListener('click', togglePlayer);
+// ── Wire UI ──
+$('#btnPlayPause').addEventListener('click', () => {
+  if (Player._state === 'loading') return;
+  Player.toggle();
+});
 $('#playerProgressWrap').addEventListener('click', (e) => {
-  if (!playerBuffer) return;
-  const rect = $('#playerProgressWrap').getBoundingClientRect();
-  const pct = (e.clientX - rect.left) / rect.width;
-  playerOffset = pct * playerBuffer.duration;
-  if (currentSource) { stopPlayer(); currentSource = null; }
-  const id = ++playId;
-  playBuffer(currentTrack, id);
+  if (!Player._buffer) return;
+  const r = $('#playerProgressWrap').getBoundingClientRect();
+  Player.seek(((e.clientX - r.left) / r.width) * Player._buffer.duration);
 });
-$('#volumeSlider').addEventListener('input', () => {
-  if (currentSource) currentSource.gainNode.gain.value = $('#volumeSlider').value / 100;
-});
+$('#volumeSlider').addEventListener('input', () => Player.updateVolume());
 
 // ====== Favorites ======
 function saveFavorites() {
@@ -828,11 +839,7 @@ function renderFavorites() {
 
 async function playFavorite(idx) {
   const t = favorites[idx];
-  showToast('⏳ 加载中…');
-  try {
-    const url = await getAudioUrl(t);
-    await playTrackUrl(t, url);
-  } catch(e) { showToast('❌ 加载失败: ' + e.message); }
+  await Player.play(t);
 }
 
 function removeFavorite(idx) {
@@ -944,11 +951,7 @@ function renderSearchResults(results) {
 
 async function playSearchResult(idx) {
   const t = lastSearchResults[idx];
-  showToast('⏳ 加载中…');
-  try {
-    const url = await getAudioUrl(t);
-    await playTrackUrl(t, url);
-  } catch(e) { showToast('❌ 加载失败: ' + e.message); }
+  await Player.play(t);
 }
 
 async function addSearchToEditor(idx) {
