@@ -5,9 +5,23 @@ import numpy as np
 import imagehash
 import json
 import zipfile
+import time
+import threading
+import uuid as uuid_lib
 from io import BytesIO
 from PIL import Image
 from flask import Flask, request, jsonify, send_file
+
+try:
+    import psutil
+    HAVE_PSUTIL = True
+except ImportError:
+    HAVE_PSUTIL = False
+    psutil = None
+
+# ── 全局分析任务进度 ──
+analysis_tasks = {}  # {task_id: {"percent":0,"frame":0,"total_frames":N,"status":"...","cpu":0,"ts":timestamp}}
+_tasks_lock = threading.Lock()
 
 app = Flask(__name__)
 app.config['UPLOAD_FOLDER'] = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'uploads')
@@ -69,12 +83,25 @@ def upload_file():
     except Exception as e:
         return jsonify({'error': f'Upload failed: {str(e)}'}), 500
 
-def detect_with_hash(filepath, threshold=10):
+def cpu_throttle_if_needed(max_cpu=70):
+    """如果 CPU 超过阈值，短暂休眠降速"""
+    if not HAVE_PSUTIL:
+        return
+    try:
+        cpu = psutil.cpu_percent(interval=0.05)
+        if cpu > max_cpu:
+            time.sleep(0.12 - (max_cpu / 1000))  # 约 50-120ms
+    except:
+        pass
+
+def detect_with_hash(filepath, threshold=10, progress_cb=None, total_frames=0):
     cap = cv2.VideoCapture(filepath)
     if not cap.isOpened():
         raise ValueError(f"Cannot open video: {filepath}")
     
     fps = cap.get(cv2.CAP_PROP_FPS)
+    if total_frames <= 0:
+        total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
     
     prev_hash = None
     stats_data = []
@@ -111,6 +138,12 @@ def detect_with_hash(filepath, threshold=10):
         
         prev_hash = current_hash
         frame_num += 1
+        
+        # ── 进度回调（每 30 帧） + CPU 限速（每 100 帧） ──
+        if frame_num % 30 == 0 and progress_cb:
+            progress_cb(frame_num, total_frames)
+        if frame_num % 100 == 0:
+            cpu_throttle_if_needed(70)
     
     cap.release()
     
@@ -247,11 +280,58 @@ def analyze_video():
         print(f"Analyzing: {base_name}")
         print(f"Threshold: {threshold}")
         
-        stats_data, scene_boundaries, fps = detect_with_hash(filepath, threshold)
+        # ── 生成 task_id + 预取总帧数 ──
+        task_id = uuid_lib.uuid4().hex[:8]
+        cap_pre = cv2.VideoCapture(filepath)
+        total_frames = int(cap_pre.get(cv2.CAP_PROP_FRAME_COUNT)) if cap_pre.isOpened() else 0
+        cap_pre.release()
+        
+        with _tasks_lock:
+            analysis_tasks[task_id] = {
+                'percent': 0, 'frame': 0, 'total_frames': max(total_frames, 1),
+                'status': '正在分析帧差异...', 'cpu': 0, 'ts': time.time()
+            }
+        
+        # ── 进度回调（帧分析阶段 0→75%）──
+        def _on_progress(frame_num, total):
+            pct = int((frame_num / max(total, 1)) * 75)
+            with _tasks_lock:
+                t = analysis_tasks.get(task_id)
+                if t:
+                    t['frame'] = frame_num
+                    t['percent'] = max(t['percent'], pct)
+                    t['status'] = f'正在分析帧差异...'
+        
+        stats_data, scene_boundaries, fps = detect_with_hash(
+            filepath, threshold,
+            progress_cb=_on_progress,
+            total_frames=total_frames
+        )
         print(f"Detected {len(scene_boundaries)} scene boundaries")
+        
+        # ── 截图阶段 75→95% ──
+        with _tasks_lock:
+            t = analysis_tasks.get(task_id)
+            if t:
+                t['percent'] = 75
+                t['status'] = '正在生成场景截图...'
         
         scenes = generate_scene_screenshots(filepath, scene_boundaries, fps, base_name)
         print(f"Generated {len(scenes)} scene screenshots")
+        
+        # ── 完成 ──
+        with _tasks_lock:
+            t = analysis_tasks.get(task_id)
+            if t:
+                t['percent'] = 100
+                t['status'] = '分析完成'
+        
+        # 延迟清理任务记录
+        def _cleanup():
+            time.sleep(5)
+            with _tasks_lock:
+                analysis_tasks.pop(task_id, None)
+        threading.Thread(target=_cleanup, daemon=True).start()
         
         return jsonify({
             'success': True,
@@ -259,7 +339,9 @@ def analyze_video():
             'scenes': scenes,
             'algorithm': 'hash',
             'filename': base_name,
-            'fps': fps
+            'fps': fps,
+            'task_id': task_id,
+            'total_frames': total_frames,
         })
     
     except Exception as e:
@@ -331,6 +413,42 @@ def delete_file():
         return jsonify({'success': True})
     except Exception as e:
         return jsonify({'error': str(e)}), 500
+
+# ── 分析进度查询 ──────────────────────────────────
+@app.route('/progress')
+def get_progress():
+    task_id = request.args.get('task_id', '')
+    with _tasks_lock:
+        t = analysis_tasks.get(task_id, {})
+    if not t:
+        return jsonify({'percent': 0, 'frame': 0, 'total_frames': 0, 'status': 'unknown', 'cpu': 0})
+    cpu_val = 0
+    if HAVE_PSUTIL:
+        try:
+            cpu_val = round(psutil.cpu_percent() or 0, 1)
+        except:
+            pass
+    return jsonify({
+        'percent': t.get('percent', 0),
+        'frame': t.get('frame', 0),
+        'total_frames': t.get('total_frames', 0),
+        'status': t.get('status', ''),
+        'cpu': cpu_val,
+    })
+
+# ── 系统资源信息 ─────────────────────────────────
+@app.route('/system-info')
+def system_info():
+    info = {'cpu_percent': 0, 'mem_percent': 0, 'process_count': 0}
+    if HAVE_PSUTIL:
+        try:
+            info['cpu_percent']  = round(psutil.cpu_percent(interval=0.05), 1)
+            mem = psutil.virtual_memory()
+            info['mem_percent']  = round(mem.percent if mem else 0, 1)
+            info['process_count'] = len(psutil.pids())
+        except:
+            pass
+    return jsonify(info)
 
 if __name__ == '__main__':
     print("Starting Scene Detection Web Server...")

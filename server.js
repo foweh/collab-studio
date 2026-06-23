@@ -520,6 +520,15 @@ app.get('/api/scenedetect/status', (req, res) => {
   r.setTimeout(2000, () => { r.destroy(); res.json({ running: false, port: SCENEDETECT_PORT, error: 'timeout' }); });
 });
 
+// 分析进度 & 系统信息（代理到 Flask）
+app.get('/api/scenedetect/progress', (req, res) => {
+  const qs = req.url.includes('?') ? req.url.substring(req.url.indexOf('?')) : '';
+  proxyToFlask(req, res, 'progress' + qs);
+});
+app.get('/api/scenedetect/system-info', (req, res) => {
+  proxyToFlask(req, res, 'system-info');
+});
+
 // ─── CapCut Mate API ──────────────────────────────────
 // 所有剪映相关端点统一在 /api/capcut/ 下，
 // 核心逻辑委托给 services/capcut-mate.js 模块。

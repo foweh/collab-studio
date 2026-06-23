@@ -460,7 +460,61 @@
             }
         });
 
-        // ─── 检测：上传 → analyze → 展示结果 ────────
+        // ─── 检测：上传 → 轮询进度 → 展示结果 ────────
+        let _pollTimer = null;
+        let _currentTaskId = '';
+
+        function startPolling(taskId, basePercent) {
+            _currentTaskId = taskId;
+            clearInterval(_pollTimer);
+            var lastFrames = 0;
+            _pollTimer = setInterval(function() {
+                fetch('/api/scenedetect/progress?task_id=' + taskId)
+                    .then(function(r) { return r.json(); })
+                    .then(function(p) {
+                        var pct = Math.max(basePercent, p.percent || 0);
+                        progressFill.style.width = pct + '%';
+                        var info = p.status || '分析中...';
+                        if (p.frame > 0 && p.total_frames > 0) {
+                            info += ' 帧 ' + formatNumber(p.frame) + ' / ' + formatNumber(p.total_frames);
+                        }
+                        if (p.cpu > 0) {
+                            info += ' · CPU ' + p.cpu + '%';
+                        }
+                        progressText.textContent = info;
+                        lastFrames = p.frame;
+                    })
+                    .catch(function() {});
+            }, 500);
+        }
+
+        function stopPolling() {
+            clearInterval(_pollTimer);
+            _pollTimer = null;
+            _currentTaskId = '';
+        }
+
+        function formatNumber(n) {
+            if (n >= 1000000) return (n / 1000000).toFixed(1) + 'M';
+            if (n >= 1000) return (n / 1000).toFixed(1) + 'K';
+            return n.toString();
+        }
+
+        // ── 模拟进度（上传前用文件大小估算）──
+        function simProgressFromFile(file, cb) {
+            // 纯本地假进度：0→50% 约 2 秒
+            var start = Date.now();
+            var sim = setInterval(function() {
+                var elapsed = (Date.now() - start) / 1000;
+                var pct = Math.min(50, elapsed * 25); // 25%/s → 2s 到 50%
+                cb(pct, '准备上传...');
+                if (pct >= 50) clearInterval(sim);
+            }, 100);
+            return {
+                stop: function() { clearInterval(sim); },
+                update: function(pct, txt) { cb(pct, txt); }
+            };
+        }
 
         function startDetection(file) {
             pdPlayer.classList.remove('show');
@@ -478,19 +532,19 @@
             var xhr = new XMLHttpRequest();
             xhr.upload.addEventListener('progress', function(e) {
                 if (e.lengthComputable) {
-                    var pct = (e.loaded / e.total) * 100;
+                    var pct = 40 + (e.loaded / e.total) * 10; // upload: 40→50
                     progressFill.style.width = pct + '%';
-                    progressText.textContent = '上传中... ' + pct.toFixed(1) + '%';
+                    progressText.textContent = '上传中... ' + (e.loaded/1048576).toFixed(1) + ' MB';
                 }
             });
             xhr.addEventListener('load', function() {
                 if (xhr.status === 200) {
                     var result = JSON.parse(xhr.responseText);
                     if (result.success) {
-                        progressText.textContent = '正在分析...';
                         progressFill.style.width = '50%';
+                        progressText.textContent = '上传完成，准备分析...';
                         currentAlgorithm = result.algorithm;
-                        analyzeVideo(result.filepath, result.filename);
+                        analyzeVideo(result.filepath, result.filename, result.task_id);
                     } else {
                         showError(result.error || '上传失败');
                     }
@@ -505,42 +559,23 @@
             xhr.send(formData);
         }
 
-        function formatTime(seconds) {
-            if (isNaN(seconds)) return '00:00:00';
-            var h = Math.floor(seconds / 3600);
-            var m = Math.floor((seconds % 3600) / 60);
-            var s = Math.floor(seconds % 60);
-            return h.toString().padStart(2,'0') + ':' + m.toString().padStart(2,'0') + ':' + s.toString().padStart(2,'0');
-        }
-
-        // ── 检测阈值应用（检测后重新分析）──
-        applyThresholdBtn.addEventListener('click', function() {
-            threshold = parseFloat(thresholdInput.value);
-            analyzeVideo(currentFilepath, currentFilename);
-        });
-        thresholdInput.addEventListener('keypress', function(e) {
-            if (e.key === 'Enter') applyThresholdBtn.click();
-        });
-
-        // ── 检测结果视频播放器 timeupdate ──
-        videoPlayer.addEventListener('timeupdate', function() {
-            var ct = videoPlayer.currentTime;
-            document.getElementById('videoTime').textContent = formatTime(ct) + ' / ' + formatTime(videoPlayer.duration);
-            updatePlayheadFromVideo();
-            if (currentSceneEndSec > 0 && ct >= currentSceneEndSec - 0.05) {
-                videoPlayer.pause();
-                currentSceneEndSec = 0;
-            }
-        });
-
-        function analyzeVideo(filepath, filename) {
+        function analyzeVideo(filepath, filename, taskId) {
             currentFilepath = filepath;
+
+            // 如果有 taskId，启动进度轮询（50%→100% 区间）
+            if (taskId) {
+                startPolling(taskId, 50);
+            } else {
+                progressFill.style.width = '50%';
+                progressText.textContent = '正在分析...';
+            }
 
             const xhr = new XMLHttpRequest();
             xhr.open('POST', '/api/scenedetect/analyze');
             xhr.setRequestHeader('Content-Type', 'application/json');
 
             xhr.addEventListener('load', () => {
+                stopPolling();
                 if (xhr.status === 200) {
                     const result = JSON.parse(xhr.responseText);
                     if (result.success) {
@@ -559,6 +594,7 @@
             });
 
             xhr.addEventListener('error', () => {
+                stopPolling();
                 showError('分析失败，请重试');
             });
 
@@ -568,6 +604,39 @@
                 algorithm: currentAlgorithm
             }));
         }
+
+        function formatTime(seconds) {
+            if (isNaN(seconds)) return '00:00:00';
+            var h = Math.floor(seconds / 3600);
+            var m = Math.floor((seconds % 3600) / 60);
+            var s = Math.floor(seconds % 60);
+            return h.toString().padStart(2,'0') + ':' + m.toString().padStart(2,'0') + ':' + s.toString().padStart(2,'0');
+        }
+
+        // ── 检测阈值应用（检测后重新分析）──
+        applyThresholdBtn.addEventListener('click', function() {
+            threshold = parseFloat(thresholdInput.value);
+            // 重新分析：重新上传 → analyze
+            if (currentFilepath) {
+                progressContainer.style.display = 'block';
+                content.style.display = 'none';
+                analyzeVideo(currentFilepath, currentFilename, '');
+            }
+        });
+        thresholdInput.addEventListener('keypress', function(e) {
+            if (e.key === 'Enter') applyThresholdBtn.click();
+        });
+
+        // ── 检测结果视频播放器 timeupdate ──
+        videoPlayer.addEventListener('timeupdate', function() {
+            var ct = videoPlayer.currentTime;
+            document.getElementById('videoTime').textContent = formatTime(ct) + ' / ' + formatTime(videoPlayer.duration);
+            updatePlayheadFromVideo();
+            if (currentSceneEndSec > 0 && ct >= currentSceneEndSec - 0.05) {
+                videoPlayer.pause();
+                currentSceneEndSec = 0;
+            }
+        });
 
         function processStats(stats, filename, algorithm, serverScenes, serverFps) {
             csvData = stats;
