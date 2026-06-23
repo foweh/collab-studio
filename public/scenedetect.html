@@ -47,6 +47,7 @@
         .pre-detect-player .player-row .icon-btn.accent { background: #667eea; }
         .pre-detect-player .player-row .icon-btn.accent:hover { background: #5568d4; }
         .pre-detect-player .player-row .video-time { font-size: 12px; color: #8892b0; font-family: monospace; }
+        .pre-detect-player .player-video { width: 100%; max-height: 380px; background: #000; border-radius: 6px; display: block; margin-bottom: 8px; }
         .pre-detect-player .player-progress { height: 6px; background: #0f3460; border-radius: 3px; cursor: pointer; margin-bottom: 4px; flex: 1; min-width: 100px; }
         .pre-detect-player .player-progress .fill { height: 100%; background: #667eea; border-radius: 3px; width: 0%; transition: width 0.05s linear; pointer-events: none; }
         .pre-detect-player .player-actions { display: flex; align-items: center; gap: 8px; margin-top: 10px; justify-content: flex-end; }
@@ -65,12 +66,19 @@
         .chart-container canvas { width: 100% !important; }
         .main-layout { display: grid; grid-template-columns: 1fr 400px; gap: 15px; }
         .video-section { background: #16213e; border-radius: 12px; padding: 15px; }
-        .video-container { position: relative; background: #000; border-radius: 8px; overflow: hidden; margin-bottom: 10px; }
-        .video-container video { width: 100%; height: auto; display: block; }
-        .video-controls { display: flex; align-items: center; gap: 10px; padding: 8px; background: rgba(0,0,0,0.5); border-radius: 6px; }
-        .video-controls button { background: rgba(255,255,255,0.2); border: none; color: white; padding: 6px 12px; border-radius: 4px; cursor: pointer; font-size: 12px; }
-        .video-controls button:hover { background: rgba(255,255,255,0.3); }
-        .video-time { font-size: 12px; color: #8892b0; font-family: monospace; }
+        .video-section { background: #16213e; border-radius: 12px; padding: 15px; }
+        .video-section video { width: 100%; max-height: 400px; background: #000; border-radius: 6px; display: block; margin-bottom: 8px; }
+        .video-section .player-row { display: flex; align-items: center; gap: 6px; margin-bottom: 6px; flex-wrap: wrap; }
+        .video-section .player-row .icon-btn { background: rgba(255,255,255,0.12); border: none; color: #e0e0e0; padding: 5px 9px; border-radius: 4px; cursor: pointer; font-size: 12px; transition: .15s; }
+        .video-section .player-row .icon-btn:hover { background: rgba(255,255,255,0.22); }
+        .video-section .player-row .icon-btn.accent { background: #667eea; }
+        .video-section .player-row .icon-btn.accent:hover { background: #5568d4; }
+        .video-section .player-row .icon-btn.scene-nav { background: rgba(100,255,218,0.15); color: #64ffda; }
+        .video-section .player-row .icon-btn.scene-nav:hover { background: rgba(100,255,218,0.25); }
+        .video-section .player-row .scene-time { font-size: 12px; color: #8892b0; font-family: monospace; min-width: 100px; }
+        .video-section .player-row .progress-wrap { flex: 1; min-width: 80px; height: 6px; background: #0f3460; border-radius: 3px; cursor: pointer; }
+        .video-section .player-row .progress-wrap .fill { height: 100%; background: #667eea; border-radius: 3px; width: 0%; transition: width 0.05s linear; pointer-events: none; }
+        .video-container { display: none; }
         .panel { background: #16213e; border-radius: 12px; padding: 15px; }
         .panel-title { font-size: 16px; font-weight: 600; margin-bottom: 12px; color: #ccd6f6; }
         .scene-list { max-height: 400px; overflow-y: auto; }
@@ -82,10 +90,8 @@
         .scene-number { font-size: 11px; color: #8892b0; background: rgba(255,255,255,0.1); padding: 2px 6px; border-radius: 3px; display: inline-block; margin-bottom: 4px; }
         .scene-time { font-size: 12px; font-family: 'Consolas', monospace; color: #e0e0e0; }
         .timeline-container { margin-bottom: 8px; }
-        .timeline-progress { position: relative; height: 28px; background: #0f3460; border-radius: 6px; cursor: pointer; overflow: hidden; }
-        .timeline-progress .fill { position: absolute; top: 0; left: 0; height: 100%; background: rgba(102,126,234,0.25); width: 0%; pointer-events: none; transition: width 0.05s linear; z-index: 2; border-radius: 6px 0 0 6px; }
-        .timeline-track { position: absolute; top: 4px; left: 0; right: 0; bottom: 4px; z-index: 1; }
-        .timeline-bar { position: absolute; top: 0; bottom: 0; background: #667eea; opacity: 0.5; transition: opacity 0.15s; border-radius: 2px; cursor: pointer; z-index: 1; }
+        .timeline-track { position: relative; height: 28px; background: #0f3460; border-radius: 6px; cursor: pointer; overflow: hidden; }
+        .timeline-bar { position: absolute; top: 4px; bottom: 4px; background: #667eea; opacity: 0.5; transition: opacity 0.15s; border-radius: 2px; cursor: pointer; z-index: 1; }
         .timeline-bar:hover { opacity: 0.8; }
         .timeline-bar.active { background: #64ffda; opacity: 1; }
         .timeline-labels { display: flex; justify-content: space-between; font-size: 11px; color: #8892b0; margin-top: 4px; }
@@ -126,6 +132,7 @@
 
         <!-- 预检测播放器（选择文件后出现，检测前使用） -->
         <div class="pre-detect-player" id="preDetectPlayer">
+            <video id="preDetectVideo" class="player-video" controls></video>
             <div class="player-row">
                 <button class="icon-btn" id="pdRew" title="后退 1 秒">⏪</button>
                 <button class="icon-btn" id="pdPrevFrame" title="上一帧">◀️</button>
@@ -150,8 +157,6 @@
                 <button class="btn btn-reset" id="pdBtnReset">重新选择</button>
                 <button class="btn btn-detect" id="pdBtnDetect">🔍 开始检测</button>
             </div>
-            <!-- 隐藏视频元素用于播放 & 截图 -->
-            <video id="preDetectVideo" style="display:none"></video>
         </div>
 
         <div class="progress-container" id="progressContainer">
@@ -197,13 +202,22 @@
             <div class="main-layout">
                 <div style="display: flex; flex-direction: column; gap: 15px;">
                     <div class="video-section">
-                        <div class="video-container">
-                            <video id="videoPlayer" controls></video>
+                        <video id="videoPlayer"></video>
+                        <div class="player-row">
+                            <button class="icon-btn scene-nav" onclick="playScenePrev()" title="上一场景">◀◀</button>
+                            <button class="icon-btn" id="btnRew" title="后退 1 秒">⏪</button>
+                            <button class="icon-btn" id="btnPrevFrame" title="上一帧">◀️</button>
+                            <button class="icon-btn accent" id="btnPlayPause" title="播放/暂停 (空格)">▶️</button>
+                            <button class="icon-btn" id="btnNextFrame" title="下一帧">▶️</button>
+                            <button class="icon-btn" id="btnFwd" title="前进 1 秒">⏩</button>
+                            <button class="icon-btn scene-nav" onclick="playSceneNext()" title="下一场景">▶▶</button>
+                            <span class="scene-time" id="videoTime">- / -</span>
+                            <button class="icon-btn accent" id="btnSceneCapture" title="场景中央截图">📸 截图</button>
                         </div>
-                        <div class="video-controls">
-                            <button onclick="playScenePrev()">上一场景</button>
-                            <button onclick="playSceneNext()">下一场景</button>
-                            <span class="video-time" id="videoTime">- / -</span>
+                        <div class="player-row">
+                            <div class="progress-wrap" id="detectProgressBar">
+                                <div class="fill" id="detectProgressFill"></div>
+                            </div>
                         </div>
                     </div>
 
@@ -212,10 +226,7 @@
                     </div>
 
                     <div class="timeline-container">
-                        <div class="timeline-progress" id="timelineProgress">
-                            <div class="fill" id="timelineFill"></div>
-                            <div class="timeline-track" id="timelineTrack"></div>
-                        </div>
+                        <div class="timeline-track" id="timelineTrack"></div>
                         <div class="timeline-labels">
                             <span id="timeStart">00:00:00</span>
                             <span id="timeEnd">00:00:00</span>
@@ -674,6 +685,7 @@
                 updateTimeline();
                 updateParams();
                 setupVideoPlayer(filename);
+                bindDetectControls();
 
                 content.style.display = 'block';
             }
@@ -875,12 +887,12 @@
                 const item = document.createElement('div');
                 item.className = 'scene-item';
                 
-                const screenshotUrl = scene.screenshot ? `/api/scenedetect/screenshot/${scene.screenshot}` : '';
-                const thumbHtml = screenshotUrl
-                    ? `<img src="${screenshotUrl}" class="scene-thumbnail" alt="Scene ${index+1}" loading="lazy"
-                           onerror="this.style.display='none';this.nextElementSibling.style.display='flex'">
-                       <div class="scene-thumb-fallback" style="display:none;width:80px;height:50px;border-radius:4px;background:linear-gradient(135deg,#667eea,#764ba2);align-items:center;justify-content:center;font-size:18px;font-weight:700;color:#fff;flex-shrink:0">${index+1}</div>`
-                    : `<div class="scene-thumb-fallback" style="width:80px;height:50px;border-radius:4px;background:linear-gradient(135deg,#667eea,#764ba2);display:flex;align-items:center;justify-content:center;font-size:18px;font-weight:700;color:#fff;flex-shrink:0">${index+1}</div>`;
+                var screenshotUrl = scene.capturedImg || (scene.screenshot ? '/api/scenedetect/screenshot/' + scene.screenshot : '');
+                var thumbHtml = screenshotUrl
+                    ? '<img src="' + screenshotUrl + '" class="scene-thumbnail" alt="Scene ' + (index+1) + '" loading="lazy"'
+                      + ' onerror="this.style.display=\'none\';this.nextElementSibling.style.display=\'flex\'">'
+                      + '<div class="scene-thumb-fallback" style="display:none;width:80px;height:50px;border-radius:4px;background:linear-gradient(135deg,#667eea,#764ba2);align-items:center;justify-content:center;font-size:18px;font-weight:700;color:#fff;flex-shrink:0">' + (index+1) + '</div>'
+                    : '<div class="scene-thumb-fallback" style="width:80px;height:50px;border-radius:4px;background:linear-gradient(135deg,#667eea,#764ba2);display:flex;align-items:center;justify-content:center;font-size:18px;font-weight:700;color:#fff;flex-shrink:0">' + (index+1) + '</div>';
 
                 item.innerHTML = `
                     ${thumbHtml}
@@ -922,25 +934,101 @@
                 track.appendChild(bar);
             });
 
-            // ── fenjing 模式：点击进度条任意位置直接 seek ──
-            const progressBar = document.getElementById('timelineProgress');
-            progressBar.onclick = function(e) {
+            // 时间线 track 点击即跳
+            track.onclick = function(e) {
                 if (!videoPlayer.duration) return;
-                const rect = progressBar.getBoundingClientRect();
+                const rect = track.getBoundingClientRect();
                 const pct = (e.clientX - rect.left) / rect.width;
                 videoPlayer.currentTime = pct * videoPlayer.duration;
             };
         }
 
+        // ── 检测结果播放控件绑定 ────────────────────
+        function bindDetectControls() {
+            const dpb = document.getElementById('detectProgressBar');
+            const dfill = document.getElementById('detectProgressFill');
+            const btnPlayPause = document.getElementById('btnPlayPause');
+            const btnRew = document.getElementById('btnRew');
+            const btnFwd = document.getElementById('btnFwd');
+            const btnPrevFrame = document.getElementById('btnPrevFrame');
+            const btnNextFrame = document.getElementById('btnNextFrame');
+            const btnSceneCapture = document.getElementById('btnSceneCapture');
+
+            // 进度条
+            dpb.addEventListener('click', function(e) {
+                if (!videoPlayer.duration) return;
+                var rect = dpb.getBoundingClientRect();
+                var pct = (e.clientX - rect.left) / rect.width;
+                videoPlayer.currentTime = pct * videoPlayer.duration;
+            });
+
+            // 播放/暂停
+            function togglePlay() {
+                if (videoPlayer.paused) videoPlayer.play(); else videoPlayer.pause();
+            }
+            btnPlayPause.onclick = togglePlay;
+            videoPlayer.addEventListener('play',  function() { btnPlayPause.textContent = '⏸️'; });
+            videoPlayer.addEventListener('pause', function() { btnPlayPause.textContent = '▶️'; });
+            videoPlayer.addEventListener('ended', function() { btnPlayPause.textContent = '▶️'; });
+
+            // seek 按钮
+            btnRew.onclick = function() {
+                videoPlayer.currentTime = Math.max(0, videoPlayer.currentTime - 1);
+            };
+            btnFwd.onclick = function() {
+                videoPlayer.currentTime = Math.min(videoPlayer.duration, videoPlayer.currentTime + 1);
+            };
+            btnPrevFrame.onclick = function() {
+                videoPlayer.currentTime = Math.max(0, videoPlayer.currentTime - 1/30);
+            };
+            btnNextFrame.onclick = function() {
+                videoPlayer.currentTime = Math.min(videoPlayer.duration, videoPlayer.currentTime + 1/30);
+            };
+
+            // 场景中央截图
+            btnSceneCapture.onclick = captureSceneScreenshot;
+        }
+
+        function captureSceneScreenshot() {
+            if (currentSceneIndex < 0 || currentSceneIndex >= scenes.length) return;
+            var scene = scenes[currentSceneIndex];
+            var ss = scene.startSeconds || scene.start_seconds || 0;
+            var se = scene.endSeconds   || scene.end_seconds   || 0;
+            var mid = (ss + se) / 2;
+
+            // 先跳到场景中央再截图
+            videoPlayer.currentTime = mid;
+            var doCapture = function() {
+                videoPlayer.removeEventListener('seeked', doCapture);
+                var cvs = document.createElement('canvas');
+                cvs.width  = videoPlayer.videoWidth  || 640;
+                cvs.height = videoPlayer.videoHeight || 360;
+                var ctx = cvs.getContext('2d');
+                ctx.drawImage(videoPlayer, 0, 0, cvs.width, cvs.height);
+                var dataUrl = cvs.toDataURL('image/jpeg', 0.85);
+
+                // 更新场景数据 & 列表缩略图
+                scenes[currentSceneIndex].capturedImg = dataUrl;
+                updateSceneList();
+            };
+            videoPlayer.addEventListener('seeked', doCapture, { once: true });
+            // 兜底
+            setTimeout(function() {
+                videoPlayer.removeEventListener('seeked', doCapture);
+                if (!scenes[currentSceneIndex].capturedImg) {
+                    doCapture();
+                }
+            }, 300);
+        }
+
         function playScene(index) {
             if (index < 0 || index >= scenes.length) return;
             currentSceneIndex = index;
-            const scene = scenes[index];
-            const startSeconds = scene.startSeconds || scene.start_seconds || 0;
-            const endSeconds   = scene.endSeconds   || scene.end_seconds   || 0;
+            var scene = scenes[index];
+            var startSeconds = scene.startSeconds || scene.start_seconds || 0;
+            var endSeconds   = scene.endSeconds   || scene.end_seconds   || 0;
             currentSceneEndSec = endSeconds;
 
-            // fenjing 模式：设 currentTime 即 seek，浏览器自行处理
             videoPlayer.currentTime = startSeconds;
             videoPlayer.play().catch(function() {});
 
@@ -957,12 +1045,14 @@
         }
 
         function updatePlayheadFromVideo() {
-            if (!videoPlayer.duration || fps <= 0) return;
-            const pct = (videoPlayer.currentTime / videoPlayer.duration) * 100;
-            document.getElementById('timelineFill').style.width = pct + '%';
+            if (!videoPlayer.duration) return;
+            // 更新视频控件进度条
+            var pct = (videoPlayer.currentTime / videoPlayer.duration) * 100;
+            var dfill = document.getElementById('detectProgressFill');
+            if (dfill) dfill.style.width = pct + '%';
 
             // 高亮当前所在场景
-            const sceneIndex = scenes.findIndex(function(s) {
+            var sceneIndex = scenes.findIndex(function(s) {
                 var ss = s.startSeconds || s.start_seconds || 0;
                 var se = s.endSeconds   || s.end_seconds   || 0;
                 return videoPlayer.currentTime >= ss && videoPlayer.currentTime <= se;
