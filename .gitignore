@@ -28,3 +28,17 @@ core_fix_cmd.txt
 find_transport.js
 .admin.env
 .env
+
+# —— 本地辅助脚本 ——
+start-collab-studio.bat
+create-desktop-shortcut.bat
+create-shortcut.ps1
+
+# —— 场景检测运行时数据 ——
+scenedetect-server/uploads/
+scenedetect-server/screenshots/
+
+# —— 工具缓存 ——
+.codegraph/
+reasonix.toml
+test-port.js

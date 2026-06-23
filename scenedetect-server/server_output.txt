@@ -1,0 +1,4 @@
+Starting PySceneDetect Web Server...
+Server running at: http://localhost:5000
+ * Serving Flask app 'server'
+ * Debug mode: off

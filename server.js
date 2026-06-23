@@ -9,6 +9,7 @@ const { v4: uuid } = require('uuid');
 const path = require('path');
 const os = require('os');
 const dgram = require('dgram');
+const { spawn } = require('child_process');
 const fs = require('fs');
 
 const { ensureDataDir, loadJSON, saveJSON, DATA_DIR } = require('./utils/persist');
@@ -82,6 +83,95 @@ auth.initAdmin(ADMIN_PASSWORD, ADMIN_USERNAME);
 // 操作历史（用于撤回/恢复），每个项目一个数组
 const projectOps = new Map(); // projectId → [{ userId, action, before, after, timestamp }]
 const projectRedoOps = new Map(); // projectId → [{ userId, action, before, after, timestamp }]
+
+// ─── PySceneDetect (Flask) 子进程管理 ──────────────────
+const SCENEDETECT_DIR = path.join(__dirname, 'scenedetect-server');
+const SCENEDETECT_PORT = 5000;
+let flaskProcess = null;
+
+function startFlaskServer() {
+  if (!fs.existsSync(SCENEDETECT_DIR)) {
+    console.log('[场景检测] 未找到 Flask 项目目录，跳过启动');
+    return;
+  }
+  console.log('[场景检测] 启动 Flask 服务...');
+  flaskProcess = spawn('python', ['server.py'], {
+    cwd: SCENEDETECT_DIR,
+    stdio: ['ignore', 'pipe', 'pipe'],
+    windowsHide: true
+  });
+  flaskProcess.stdout.on('data', d => {
+    const line = d.toString().trim();
+    if (line) console.log(`[Flask] ${line}`);
+  });
+  flaskProcess.stderr.on('data', d => {
+    const line = d.toString().trim();
+    if (line && !line.includes('WARNING')) console.log(`[Flask] ${line}`);
+  });
+  flaskProcess.on('error', err => {
+    console.log('[场景检测] Flask 启动失败:', err.message);
+    console.log('[场景检测] 请确保已安装 Python 和依赖: pip install flask opencv-python imagehash Pillow');
+  });
+  flaskProcess.on('exit', (code, signal) => {
+    console.log(`[场景检测] Flask 进程退出 (code=${code}, signal=${signal})`);
+    flaskProcess = null;
+  });
+}
+
+function stopFlaskServer() {
+  if (flaskProcess) {
+    console.log('[场景检测] 停止 Flask 服务...');
+    try { flaskProcess.kill('SIGTERM'); } catch (_) {}
+    flaskProcess = null;
+  }
+}
+
+// ─── Flask 反向代理工具 ─────────────────────────────
+function proxyToFlask(req, res, pathSuffix) {
+  const contentType = req.headers['content-type'] || '';
+  const isMultipart = contentType.includes('multipart/form-data');
+  const options = {
+    hostname: '127.0.0.1',
+    port: SCENEDETECT_PORT,
+    path: '/' + pathSuffix,
+    method: req.method,
+    headers: { ...req.headers },
+    timeout: 300000 // 5min for long analysis
+  };
+  // Remove host header to avoid conflict
+  delete options.headers.host;
+
+  const proxyReq = http.request(options, proxyRes => {
+    // Forward status/headers
+    res.statusCode = proxyRes.statusCode;
+    // Copy relevant headers
+    const copyHeaders = ['content-type', 'content-length', 'content-disposition', 'cache-control'];
+    copyHeaders.forEach(h => {
+      if (proxyRes.headers[h]) res.setHeader(h, proxyRes.headers[h]);
+    });
+    proxyRes.pipe(res);
+  });
+  proxyReq.on('error', err => {
+    console.error('[场景检测] 代理请求失败:', err.message);
+    if (!res.headersSent) {
+      res.status(502).json({ error: '场景检测服务不可用', detail: err.message });
+    }
+  });
+
+  if (isMultipart) {
+    // multipart: raw stream still available (express.json didn't consume it)
+    req.pipe(proxyReq);
+  } else if (req.method === 'POST' && req.body && Object.keys(req.body).length > 0) {
+    // JSON body already parsed by express.json() — send it as JSON
+    delete options.headers['content-length']; // let Node calculate
+    const bodyStr = JSON.stringify(req.body);
+    options.headers['content-length'] = Buffer.byteLength(bodyStr);
+    proxyReq.write(bodyStr);
+    proxyReq.end();
+  } else {
+    proxyReq.end();
+  }
+}
 
 function pushProjectOp(projectId, userId, action, before, after) {
   if (!projectOps.has(projectId)) projectOps.set(projectId, []);
@@ -388,6 +478,46 @@ app.get('/music-studio.html', (req, res) => {
   res.setHeader('Pragma', 'no-cache');
   res.setHeader('Expires', '0');
   res.sendFile(path.join(__dirname, 'public', 'music-studio.html'));
+});
+
+// ─── 场景检测 (PySceneDetect) API ────────────────────
+// 反向代理到 Flask 服务
+
+// 场景检测主页
+app.get('/scenedetect.html', (req, res) => {
+  res.sendFile(path.join(__dirname, 'public', 'scenedetect.html'));
+});
+
+// 代理到 Flask 的所有路由
+const flaskProxyRoutes = {
+  'POST /api/scenedetect/upload':    { method: 'POST', suffix: 'upload' },
+  'POST /api/scenedetect/analyze':   { method: 'POST', suffix: 'analyze' },
+  'POST /api/scenedetect/export':    { method: 'POST', suffix: 'export' },
+  'POST /api/scenedetect/delete':    { method: 'POST', suffix: 'delete' },
+};
+
+for (const [route, cfg] of Object.entries(flaskProxyRoutes)) {
+  const [method, pathPattern] = route.split(' ');
+  app[method.toLowerCase()](pathPattern, (req, res) => {
+    proxyToFlask(req, res, cfg.suffix);
+  });
+}
+
+// 视频流 & 截图 — 直接托管 Flask 目录（绕过代理，支持 Range/seek）
+const scenedetectUploads = path.join(SCENEDETECT_DIR, 'uploads');
+const scenedetectShots   = path.join(SCENEDETECT_DIR, 'screenshots');
+fs.mkdirSync(scenedetectUploads, { recursive: true });
+fs.mkdirSync(scenedetectShots,   { recursive: true });
+app.use('/api/scenedetect/video',      express.static(scenedetectUploads, { acceptRanges: true, maxAge: '1d' }));
+app.use('/api/scenedetect/screenshot', express.static(scenedetectShots,   { acceptRanges: true, maxAge: '1d' }));
+
+// 场景检测服务状态
+app.get('/api/scenedetect/status', (req, res) => {
+  const r = http.get(`http://127.0.0.1:${SCENEDETECT_PORT}/`, (resp) => {
+    res.json({ running: true, port: SCENEDETECT_PORT, dir: SCENEDETECT_DIR });
+  });
+  r.on('error', () => res.json({ running: false, port: SCENEDETECT_PORT }));
+  r.setTimeout(2000, () => { r.destroy(); res.json({ running: false, port: SCENEDETECT_PORT, error: 'timeout' }); });
 });
 
 // ─── CapCut Mate API ──────────────────────────────────
@@ -2533,6 +2663,7 @@ function gracefulShutdown(signal) {
   if (shuttingDown) return;
   shuttingDown = true;
   console.log(`\n[关闭] 收到 ${signal}，正在通知所有客户端...`);
+  stopFlaskServer();
   io.emit('server-shutdown', { reason: '服务器已停止', timestamp: Date.now() });
   if (fenjingNsp) fenjingNsp.emit('server-shutdown', { reason: '服务器已停止', timestamp: Date.now() });
   setTimeout(() => {
@@ -2590,6 +2721,8 @@ function startServer(port) {
   console.log('║  🔑 密码: 已设置（登录页输入）            ║');
   console.log('║  💡 登录后可在右侧面板修改密码           ║');
   console.log('╚══════════════════════════════════════════╝');
+  // 启动 Flask 场景检测服务
+  startFlaskServer();
   });
 
   // HTTP → HTTPS 重定向

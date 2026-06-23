@@ -1,0 +1,988 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>场景检测工具 - 创作工作室</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #0f0f1a; color: #e0e0e0; min-height: 100vh; }
+        .back-link { position: fixed; top: 14px; left: 14px; z-index: 999; background: rgba(255,255,255,0.08); color: #e0e0e0; border: 1px solid rgba(255,255,255,0.15); padding: 6px 14px; border-radius: 6px; cursor: pointer; font-size: 13px; text-decoration: none; backdrop-filter: blur(6px); transition: .2s; }
+        .back-link:hover { background: rgba(255,255,255,0.15); color: #fff; }
+        .header { background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%); padding: 18px; text-align: center; box-shadow: 0 4px 20px rgba(0,0,0,0.3); }
+        .header h1 { font-size: 24px; font-weight: 600; margin-bottom: 6px; }
+        .header p { font-size: 13px; color: #8892b0; }
+        .container { max-width: 1400px; margin: 0 auto; padding: 15px; }
+        .upload-section { background: #16213e; border-radius: 12px; padding: 35px; margin-bottom: 15px; text-align: center; border: 2px dashed #3d4f6b; transition: all 0.3s; cursor: pointer; }
+        .upload-section:hover { border-color: #64ffda; background: rgba(22, 33, 62, 0.9); }
+        .upload-section.dragover { border-color: #64ffda; background: rgba(100, 255, 218, 0.08); }
+        .upload-section.processing { border-color: #667eea; background: rgba(102, 126, 234, 0.1); cursor: not-allowed; }
+        .upload-icon { font-size: 56px; margin-bottom: 15px; opacity: 0.5; }
+        .upload-text { font-size: 16px; margin-bottom: 8px; }
+        .upload-hint { font-size: 13px; color: #8892b0; }
+        #fileInput { display: none; }
+        .progress-container { display: none; margin-bottom: 15px; }
+        .progress-bar { height: 4px; background: #0f3460; border-radius: 2px; overflow: hidden; }
+        .progress-fill { height: 100%; background: linear-gradient(90deg, #667eea, #764ba2); transition: width 0.3s ease-out; width: 0%; }
+        .progress-text { font-size: 13px; color: #8892b0; margin-top: 6px; text-align: center; }
+        .info-bar { display: flex; justify-content: space-between; align-items: center; background: #16213e; border-radius: 10px; padding: 12px 18px; margin-bottom: 15px; flex-wrap: wrap; gap: 10px; }
+        .info-item { display: flex; align-items: center; gap: 6px; }
+        .info-label { color: #8892b0; font-size: 12px; }
+        .info-value { font-size: 14px; font-weight: 600; color: #64ffda; }
+        .controls { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+        .algorithm-selector { display: flex; align-items: center; gap: 8px; }
+        .algorithm-selector label { color: #8892b0; font-size: 12px; }
+        .algorithm-selector select { padding: 6px 12px; border-radius: 6px; border: 1px solid #3d4f6b; background: #0f3460; color: white; font-size: 13px; }
+        .threshold-control { display: flex; align-items: center; gap: 8px; }
+        .threshold-control label { color: #8892b0; font-size: 12px; }
+        .threshold-control input { width: 80px; padding: 6px 8px; border-radius: 6px; border: 1px solid #3d4f6b; background: #0f3460; color: white; font-size: 13px; }
+        .threshold-control button { padding: 6px 12px; background: #667eea; color: white; border: none; border-radius: 6px; cursor: pointer; font-size: 12px; }
+        /* ── 预检测视频播放器（fenjing 风格）── */
+        .pre-detect-player { display: none; background: #16213e; border-radius: 12px; padding: 15px; margin-bottom: 15px; }
+        .pre-detect-player.show { display: block; }
+        .pre-detect-player .player-row { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; flex-wrap: wrap; }
+        .pre-detect-player .player-row .icon-btn { background: rgba(255,255,255,0.12); border: none; color: #e0e0e0; padding: 6px 10px; border-radius: 4px; cursor: pointer; font-size: 13px; transition: .15s; }
+        .pre-detect-player .player-row .icon-btn:hover { background: rgba(255,255,255,0.22); }
+        .pre-detect-player .player-row .icon-btn.accent { background: #667eea; }
+        .pre-detect-player .player-row .icon-btn.accent:hover { background: #5568d4; }
+        .pre-detect-player .player-row .video-time { font-size: 12px; color: #8892b0; font-family: monospace; }
+        .pre-detect-player .player-progress { height: 6px; background: #0f3460; border-radius: 3px; cursor: pointer; margin-bottom: 4px; flex: 1; min-width: 100px; }
+        .pre-detect-player .player-progress .fill { height: 100%; background: #667eea; border-radius: 3px; width: 0%; transition: width 0.05s linear; pointer-events: none; }
+        .pre-detect-player .player-actions { display: flex; align-items: center; gap: 8px; margin-top: 10px; justify-content: flex-end; }
+        .pre-detect-player .player-actions .btn { padding: 8px 18px; border: none; border-radius: 6px; cursor: pointer; font-size: 13px; }
+        .pre-detect-player .player-actions .btn-detect { background: #e94560; color: #fff; }
+        .pre-detect-player .player-actions .btn-detect:hover { background: #ff6b81; }
+        .pre-detect-player .player-actions .btn-reset { background: rgba(255,255,255,0.1); color: #8892b0; }
+        .pre-detect-player .player-actions .btn-reset:hover { background: rgba(255,255,255,0.2); color: #e0e0e0; }
+        .pre-captures { display: flex; gap: 8px; overflow-x: auto; padding: 8px 0; }
+        .pre-capture-card { flex-shrink: 0; width: 90px; text-align: center; background: #0f3460; border-radius: 6px; padding: 4px; font-size: 11px; color: #8892b0; cursor: pointer; transition: .15s; }
+        .pre-capture-card:hover { background: rgba(100,255,218,0.12); color: #e0e0e0; }
+        .pre-capture-card img { width: 100%; height: 50px; object-fit: cover; border-radius: 3px; display: block; }
+        .pre-capture-card .cap-time { margin-top: 3px; font-family: monospace; }
+        .pre-capture-card .cap-del { font-size: 14px; cursor: pointer; color: #e94560; margin-left: 4px; }
+        .chart-container { background: #16213e; border-radius: 12px; padding: 18px; margin-bottom: 15px; }
+        .chart-container canvas { width: 100% !important; }
+        .main-layout { display: grid; grid-template-columns: 1fr 400px; gap: 15px; }
+        .video-section { background: #16213e; border-radius: 12px; padding: 15px; }
+        .video-container { position: relative; background: #000; border-radius: 8px; overflow: hidden; margin-bottom: 10px; }
+        .video-container video { width: 100%; height: auto; display: block; }
+        .video-controls { display: flex; align-items: center; gap: 10px; padding: 8px; background: rgba(0,0,0,0.5); border-radius: 6px; }
+        .video-controls button { background: rgba(255,255,255,0.2); border: none; color: white; padding: 6px 12px; border-radius: 4px; cursor: pointer; font-size: 12px; }
+        .video-controls button:hover { background: rgba(255,255,255,0.3); }
+        .video-time { font-size: 12px; color: #8892b0; font-family: monospace; }
+        .panel { background: #16213e; border-radius: 12px; padding: 15px; }
+        .panel-title { font-size: 16px; font-weight: 600; margin-bottom: 12px; color: #ccd6f6; }
+        .scene-list { max-height: 400px; overflow-y: auto; }
+        .scene-item { display: flex; align-items: center; gap: 12px; padding: 10px; background: #0f3460; border-radius: 8px; margin-bottom: 8px; cursor: pointer; transition: all 0.2s; }
+        .scene-item:hover { background: rgba(100, 255, 218, 0.1); transform: translateX(4px); }
+        .scene-item.active { background: rgba(100, 255, 218, 0.15); border-left: 3px solid #64ffda; }
+        .scene-thumbnail { width: 80px; height: 50px; border-radius: 4px; object-fit: cover; background: #1a1a2e; }
+        .scene-info { flex: 1; min-width: 0; }
+        .scene-number { font-size: 11px; color: #8892b0; background: rgba(255,255,255,0.1); padding: 2px 6px; border-radius: 3px; display: inline-block; margin-bottom: 4px; }
+        .scene-time { font-size: 12px; font-family: 'Consolas', monospace; color: #e0e0e0; }
+        .timeline-container { margin-bottom: 8px; }
+        .timeline-progress { position: relative; height: 28px; background: #0f3460; border-radius: 6px; cursor: pointer; overflow: hidden; }
+        .timeline-progress .fill { position: absolute; top: 0; left: 0; height: 100%; background: rgba(102,126,234,0.25); width: 0%; pointer-events: none; transition: width 0.05s linear; z-index: 2; border-radius: 6px 0 0 6px; }
+        .timeline-track { position: absolute; top: 4px; left: 0; right: 0; bottom: 4px; z-index: 1; }
+        .timeline-bar { position: absolute; top: 0; bottom: 0; background: #667eea; opacity: 0.5; transition: opacity 0.15s; border-radius: 2px; cursor: pointer; z-index: 1; }
+        .timeline-bar:hover { opacity: 0.8; }
+        .timeline-bar.active { background: #64ffda; opacity: 1; }
+        .timeline-labels { display: flex; justify-content: space-between; font-size: 11px; color: #8892b0; margin-top: 4px; }
+        .stats-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-bottom: 15px; }
+        .stat-card { background: #16213e; border-radius: 8px; padding: 12px; text-align: center; }
+        .stat-card .stat-value { font-size: 20px; font-weight: 700; color: #64ffda; }
+        .stat-card .stat-label { font-size: 11px; color: #8892b0; margin-top: 4px; }
+        .error-message { background: rgba(255, 107, 107, 0.1); border: 1px solid #ff6b6b; border-radius: 8px; padding: 12px; color: #ff6b6b; margin-bottom: 15px; display: none; }
+        .reupload-btn { display: inline-block; padding: 8px 16px; background: #667eea; color: white; border-radius: 6px; cursor: pointer; font-size: 13px; }
+        .algorithm-info { font-size: 11px; color: #8892b0; margin-top: 4px; }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <a class="back-link" href="#" onclick="goBack()">← 返回工作台</a>
+        <h1>🎬 视频场景检测工具</h1>
+        <p>基于感知哈希(Hash)算法的视频场景检测，点击场景跳转播放</p>
+    </div>
+    
+    <div class="container">
+        <div class="info-bar" style="display: flex; justify-content: center; margin-bottom: 15px;">
+            <div class="controls">
+                <div class="threshold-control">
+                    <label>检测阈值:</label>
+                    <input type="number" id="thresholdInput" value="20" step="1" min="0" max="100">
+                    <button id="applyThreshold">应用</button>
+                    <span style="font-size: 11px; color: #8892b0;">(值越小，检测越敏感)</span>
+                </div>
+            </div>
+        </div>
+
+        <div class="upload-section" id="uploadSection">
+            <div class="upload-icon">📽️</div>
+            <div class="upload-text">拖拽视频文件到这里，或点击选择文件</div>
+            <div class="upload-hint">支持 MP4, AVI, MOV, MKV, FLV, WMV 格式</div>
+            <input type="file" id="fileInput" accept="video/*">
+        </div>
+
+        <!-- 预检测播放器（选择文件后出现，检测前使用） -->
+        <div class="pre-detect-player" id="preDetectPlayer">
+            <div class="player-row">
+                <button class="icon-btn" id="pdRew" title="后退 1 秒">⏪</button>
+                <button class="icon-btn" id="pdPrevFrame" title="上一帧">◀️</button>
+                <button class="icon-btn accent" id="pdPlay" title="播放/暂停 (空格)">▶️</button>
+                <button class="icon-btn" id="pdNextFrame" title="下一帧">▶️</button>
+                <button class="icon-btn" id="pdFwd" title="前进 1 秒">⏩</button>
+                <span class="video-time">
+                    <span id="pdTimeCurrent">0:00</span>
+                    <span> / </span>
+                    <span id="pdTimeDuration">0:00</span>
+                </span>
+                <button class="icon-btn accent" id="pdCapture" title="截图 (S)">📸 截图</button>
+                <span style="font-size:11px;color:#8892b0;margin-left:auto" id="pdCaptureCount">0 张</span>
+            </div>
+            <div class="player-row" style="gap:0">
+                <div class="player-progress" id="pdProgressBar">
+                    <div class="fill" id="pdProgressFill"></div>
+                </div>
+            </div>
+            <div class="pre-captures" id="pdCaptureList"></div>
+            <div class="player-actions">
+                <button class="btn btn-reset" id="pdBtnReset">重新选择</button>
+                <button class="btn btn-detect" id="pdBtnDetect">🔍 开始检测</button>
+            </div>
+            <!-- 隐藏视频元素用于播放 & 截图 -->
+            <video id="preDetectVideo" style="display:none"></video>
+        </div>
+
+        <div class="progress-container" id="progressContainer">
+            <div class="progress-bar">
+                <div class="progress-fill" id="progressFill"></div>
+            </div>
+            <div class="progress-text" id="progressText">准备上传...</div>
+        </div>
+
+        <div class="error-message" id="errorMessage"></div>
+
+        <div id="content" style="display: none;">
+            <div class="stats-grid">
+                <div class="stat-card">
+                    <div class="stat-value" id="totalFrames">0</div>
+                    <div class="stat-label">总帧数</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-value" id="totalScenes">0</div>
+                    <div class="stat-label">检测场景数</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-value" id="avgSceneDuration">0s</div>
+                    <div class="stat-label">平均场景时长</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-value" id="videoDuration">00:00:00</div>
+                    <div class="stat-label">视频总时长</div>
+                </div>
+            </div>
+
+            <div class="info-bar">
+                <div class="info-item">
+                    <span class="info-label">文件名:</span>
+                    <span class="info-value" id="fileName">-</span>
+                </div>
+                <div class="info-item">
+                    <span class="info-label">算法:</span>
+                    <span class="info-value" id="currentAlgorithm">-</span>
+                </div>
+            </div>
+
+            <div class="main-layout">
+                <div style="display: flex; flex-direction: column; gap: 15px;">
+                    <div class="video-section">
+                        <div class="video-container">
+                            <video id="videoPlayer" controls></video>
+                        </div>
+                        <div class="video-controls">
+                            <button onclick="playScenePrev()">上一场景</button>
+                            <button onclick="playSceneNext()">下一场景</button>
+                            <span class="video-time" id="videoTime">- / -</span>
+                        </div>
+                    </div>
+
+                    <div class="chart-container">
+                        <canvas id="sceneChart"></canvas>
+                    </div>
+
+                    <div class="timeline-container">
+                        <div class="timeline-progress" id="timelineProgress">
+                            <div class="fill" id="timelineFill"></div>
+                            <div class="timeline-track" id="timelineTrack"></div>
+                        </div>
+                        <div class="timeline-labels">
+                            <span id="timeStart">00:00:00</span>
+                            <span id="timeEnd">00:00:00</span>
+                        </div>
+                    </div>
+                </div>
+
+                <div style="display: flex; flex-direction: column; gap: 15px;">
+                    <div class="panel">
+                        <div class="panel-title">📋 场景列表</div>
+                        <div class="scene-list" id="sceneList"></div>
+                    </div>
+                    <div class="panel">
+                        <div class="panel-title">📈 检测参数</div>
+                        <div id="paramsList"></div>
+                    </div>
+                    <div style="text-align: center;">
+                    <div class="reupload-btn" onclick="exportScenes()" style="background: #00b894; margin-bottom: 8px;">📦 导出场景截图</div>
+                    <div class="reupload-btn" onclick="resetUpload()">上传新视频</div>
+                </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // ── 返回工作台：iframe 内则通知父页面切面板，独立访问则跳转 ──
+        function goBack() {
+            if (window.parent && window.parent !== window && window.parent.switchModule) {
+                window.parent.switchModule('projects');
+            } else {
+                window.location.href = '/app';
+            }
+        }
+
+        let chart = null;
+        let csvData = [];
+        let scenes = [];
+        let threshold = 20;
+        let fps = 30;
+        let currentFilepath = '';
+        let currentAlgorithm = 'hash';
+        let currentSceneIndex = -1;
+        let currentSceneEndSec = 0;
+        let videoUrl = '';
+        let currentFilename = '';
+
+        // ── 预检测播放器变量 ──
+        let preDetectFile = null;
+        let preDetectCaptures = [];  // { time, img }
+
+        const fileInput      = document.getElementById('fileInput');
+        const uploadSection  = document.getElementById('uploadSection');
+        const content        = document.getElementById('content');
+        const progressContainer = document.getElementById('progressContainer');
+        const progressFill   = document.getElementById('progressFill');
+        const progressText   = document.getElementById('progressText');
+        const errorMessage   = document.getElementById('errorMessage');
+        const thresholdInput = document.getElementById('thresholdInput');
+        const applyThresholdBtn = document.getElementById('applyThreshold');
+        const videoPlayer    = document.getElementById('videoPlayer');
+
+        // 预检测播放器 DOM
+        const pdPlayer       = document.getElementById('preDetectPlayer');
+        const pdVideo        = document.getElementById('preDetectVideo');
+        const pdPlayBtn      = document.getElementById('pdPlay');
+        const pdCaptureBtn   = document.getElementById('pdCapture');
+        const pdProgressBar  = document.getElementById('pdProgressBar');
+        const pdProgressFill = document.getElementById('pdProgressFill');
+        const pdTimeCurrent  = document.getElementById('pdTimeCurrent');
+        const pdTimeDuration = document.getElementById('pdTimeDuration');
+        const pdCaptureList  = document.getElementById('pdCaptureList');
+        const pdCaptureCount = document.getElementById('pdCaptureCount');
+        const pdBtnDetect    = document.getElementById('pdBtnDetect');
+        const pdBtnReset     = document.getElementById('pdBtnReset');
+
+        // ── 时间格式化（fenjing 风格）──
+        function fmtTimeShort(s) {
+            if (!isFinite(s) || s < 0) return '0:00';
+            var m = Math.floor(s / 60);
+            var sec = Math.floor(s % 60);
+            return m + ':' + (sec < 10 ? '0' : '') + sec;
+        }
+        function fmtTimeFull(s) {
+            var m = Math.floor(s / 60);
+            var sec = Math.floor(s % 60);
+            var ms = Math.floor((s % 1) * 100);
+            return m + ':' + (sec < 10 ? '0' : '') + sec + '.' + (ms < 10 ? '0' : '') + ms;
+        }
+
+        // ─── 预检测播放器逻辑 ──────────────────────
+
+        function showPreDetectPlayer(file) {
+            preDetectFile = file;
+            preDetectCaptures = [];
+            pdCaptureList.innerHTML = '';
+            pdCaptureCount.textContent = '0 张';
+            uploadSection.style.display = 'none';
+            pdPlayer.classList.add('show');
+            pdVideo.src = URL.createObjectURL(file);
+            pdVideo.load();
+        }
+
+        function hidePreDetectPlayer() {
+            pdPlayer.classList.remove('show');
+            uploadSection.style.display = '';
+            if (pdVideo.src) {
+                URL.revokeObjectURL(pdVideo.src);
+                pdVideo.src = '';
+            }
+            preDetectFile = null;
+            preDetectCaptures = [];
+            fileInput.value = '';
+        }
+
+        // 播放/暂停
+        function pdTogglePlay() {
+            if (!pdVideo.src) return;
+            if (pdVideo.paused) pdVideo.play(); else pdVideo.pause();
+        }
+        pdPlayBtn.addEventListener('click', pdTogglePlay);
+        pdVideo.addEventListener('play',  function() { pdPlayBtn.textContent = '⏸️'; });
+        pdVideo.addEventListener('pause', function() { pdPlayBtn.textContent = '▶️'; });
+        pdVideo.addEventListener('ended', function() { pdPlayBtn.textContent = '▶️'; });
+
+        // 进度条更新
+        pdVideo.addEventListener('timeupdate', function() {
+            if (!pdVideo.duration) return;
+            var pct = (pdVideo.currentTime / pdVideo.duration) * 100;
+            pdProgressFill.style.width = pct + '%';
+            pdTimeCurrent.textContent = fmtTimeShort(pdVideo.currentTime);
+        });
+        pdVideo.addEventListener('loadedmetadata', function() {
+            pdTimeDuration.textContent = fmtTimeShort(pdVideo.duration);
+        });
+
+        // 进度条点击即跳
+        pdProgressBar.addEventListener('click', function(e) {
+            if (!pdVideo.duration) return;
+            var rect = pdProgressBar.getBoundingClientRect();
+            var pct = (e.clientX - rect.left) / rect.width;
+            pdVideo.currentTime = pct * pdVideo.duration;
+        });
+
+        // Seek 按钮
+        document.getElementById('pdRew').addEventListener('click', function() {
+            pdVideo.currentTime = Math.max(0, pdVideo.currentTime - 1);
+        });
+        document.getElementById('pdFwd').addEventListener('click', function() {
+            pdVideo.currentTime = Math.min(pdVideo.duration, pdVideo.currentTime + 1);
+        });
+        document.getElementById('pdPrevFrame').addEventListener('click', function() {
+            pdVideo.currentTime = Math.max(0, pdVideo.currentTime - 1/30);
+        });
+        document.getElementById('pdNextFrame').addEventListener('click', function() {
+            pdVideo.currentTime = Math.min(pdVideo.duration, pdVideo.currentTime + 1/30);
+        });
+
+        // 截图
+        pdCaptureBtn.addEventListener('click', function() {
+            if (!pdVideo.duration) return;
+            var cvs = document.createElement('canvas');
+            cvs.width  = pdVideo.videoWidth  || 640;
+            cvs.height = pdVideo.videoHeight || 360;
+            var ctx = cvs.getContext('2d');
+            ctx.drawImage(pdVideo, 0, 0, cvs.width, cvs.height);
+            var dataUrl = cvs.toDataURL('image/jpeg', 0.85);
+            preDetectCaptures.push({
+                time: pdVideo.currentTime,
+                img: dataUrl
+            });
+            renderCaptures();
+        });
+
+        function renderCaptures() {
+            pdCaptureList.innerHTML = '';
+            preDetectCaptures.forEach(function(cap, i) {
+                var card = document.createElement('div');
+                card.className = 'pre-capture-card';
+                card.innerHTML =
+                    '<img src="' + cap.img + '" alt="capture ' + (i+1) + '">' +
+                    '<div class="cap-time">' + fmtTimeFull(cap.time) +
+                    '<span class="cap-del" data-idx="' + i + '">✕</span></div>';
+                card.querySelector('img').addEventListener('click', function() {
+                    pdVideo.currentTime = cap.time;
+                });
+                card.querySelector('.cap-del').addEventListener('click', function(e) {
+                    e.stopPropagation();
+                    preDetectCaptures.splice(i, 1);
+                    renderCaptures();
+                });
+                pdCaptureList.appendChild(card);
+            });
+            pdCaptureCount.textContent = preDetectCaptures.length + ' 张';
+        }
+
+        // "开始检测" → 上传+分析
+        pdBtnDetect.addEventListener('click', function() {
+            if (!preDetectFile) return;
+            startDetection(preDetectFile);
+        });
+
+        // "重新选择"
+        pdBtnReset.addEventListener('click', function() {
+            hidePreDetectPlayer();
+        });
+
+        // 键盘快捷键
+        document.addEventListener('keydown', function(e) {
+            if (!pdPlayer.classList.contains('show')) return;
+            if (e.target.tagName === 'INPUT') return;
+            if (e.code === 'Space') { e.preventDefault(); pdTogglePlay(); }
+            if (e.code === 'KeyS') { e.preventDefault(); pdCaptureBtn.click(); }
+            if (e.code === 'ArrowLeft')  { e.preventDefault(); pdVideo.currentTime = Math.max(0, pdVideo.currentTime - 1); }
+            if (e.code === 'ArrowRight') { e.preventDefault(); pdVideo.currentTime = Math.min(pdVideo.duration, pdVideo.currentTime + 1); }
+        });
+
+        // ─── 文件选择入口 ─────────────────────────
+
+        uploadSection.addEventListener('dragover', function(e) {
+            e.preventDefault();
+            uploadSection.classList.add('dragover');
+        });
+        uploadSection.addEventListener('dragleave', function() {
+            uploadSection.classList.remove('dragover');
+        });
+        uploadSection.addEventListener('drop', function(e) {
+            e.preventDefault();
+            uploadSection.classList.remove('dragover');
+            var file = e.dataTransfer.files[0];
+            if (file && file.type.startsWith('video/')) {
+                showPreDetectPlayer(file);
+            }
+        });
+        uploadSection.addEventListener('click', function() {
+            fileInput.click();
+        });
+        fileInput.addEventListener('change', function(e) {
+            var file = e.target.files[0];
+            if (file) {
+                showPreDetectPlayer(file);
+            }
+        });
+
+        // ─── 检测：上传 → analyze → 展示结果 ────────
+
+        function startDetection(file) {
+            pdPlayer.classList.remove('show');
+            errorMessage.style.display = 'none';
+            progressContainer.style.display = 'block';
+            content.style.display = 'none';
+            progressFill.style.width = '0%';
+            progressText.textContent = '上传中...';
+
+            var formData = new FormData();
+            formData.append('video', file);
+            formData.append('threshold', threshold);
+            formData.append('algorithm', currentAlgorithm);
+
+            var xhr = new XMLHttpRequest();
+            xhr.upload.addEventListener('progress', function(e) {
+                if (e.lengthComputable) {
+                    var pct = (e.loaded / e.total) * 100;
+                    progressFill.style.width = pct + '%';
+                    progressText.textContent = '上传中... ' + pct.toFixed(1) + '%';
+                }
+            });
+            xhr.addEventListener('load', function() {
+                if (xhr.status === 200) {
+                    var result = JSON.parse(xhr.responseText);
+                    if (result.success) {
+                        progressText.textContent = '正在分析...';
+                        progressFill.style.width = '50%';
+                        currentAlgorithm = result.algorithm;
+                        analyzeVideo(result.filepath, result.filename);
+                    } else {
+                        showError(result.error || '上传失败');
+                    }
+                } else {
+                    showError('上传失败: ' + xhr.status);
+                }
+            });
+            xhr.addEventListener('error', function() {
+                showError('网络错误，请重试');
+            });
+            xhr.open('POST', '/api/scenedetect/upload');
+            xhr.send(formData);
+        }
+
+        function formatTime(seconds) {
+            if (isNaN(seconds)) return '00:00:00';
+            var h = Math.floor(seconds / 3600);
+            var m = Math.floor((seconds % 3600) / 60);
+            var s = Math.floor(seconds % 60);
+            return h.toString().padStart(2,'0') + ':' + m.toString().padStart(2,'0') + ':' + s.toString().padStart(2,'0');
+        }
+
+        // ── 检测阈值应用（检测后重新分析）──
+        applyThresholdBtn.addEventListener('click', function() {
+            threshold = parseFloat(thresholdInput.value);
+            analyzeVideo(currentFilepath, currentFilename);
+        });
+        thresholdInput.addEventListener('keypress', function(e) {
+            if (e.key === 'Enter') applyThresholdBtn.click();
+        });
+
+        // ── 检测结果视频播放器 timeupdate ──
+        videoPlayer.addEventListener('timeupdate', function() {
+            var ct = videoPlayer.currentTime;
+            document.getElementById('videoTime').textContent = formatTime(ct) + ' / ' + formatTime(videoPlayer.duration);
+            updatePlayheadFromVideo();
+            if (currentSceneEndSec > 0 && ct >= currentSceneEndSec - 0.05) {
+                videoPlayer.pause();
+                currentSceneEndSec = 0;
+            }
+        });
+
+        function analyzeVideo(filepath, filename) {
+            currentFilepath = filepath;
+
+            const xhr = new XMLHttpRequest();
+            xhr.open('POST', '/api/scenedetect/analyze');
+            xhr.setRequestHeader('Content-Type', 'application/json');
+
+            xhr.addEventListener('load', () => {
+                if (xhr.status === 200) {
+                    const result = JSON.parse(xhr.responseText);
+                    if (result.success) {
+                        progressFill.style.width = '100%';
+                        progressText.textContent = '分析完成！';
+                        setTimeout(() => {
+                            progressContainer.style.display = 'none';
+                        }, 1000);
+                        processStats(result.stats, filename, result.algorithm, result.scenes, result.fps);
+                    } else {
+                        showError(result.error || '分析失败');
+                    }
+                } else {
+                    showError('分析失败: ' + xhr.status);
+                }
+            });
+
+            xhr.addEventListener('error', () => {
+                showError('分析失败，请重试');
+            });
+
+            xhr.send(JSON.stringify({
+                filepath: filepath,
+                threshold: threshold,
+                algorithm: currentAlgorithm
+            }));
+        }
+
+        function processStats(stats, filename, algorithm, serverScenes, serverFps) {
+            csvData = stats;
+            currentAlgorithm = algorithm;
+            currentFilename = filename;
+
+            if (serverFps) {
+                fps = serverFps;
+            }
+
+            if (csvData.length > 0) {
+                const firstRow = csvData[0];
+                const lastRow = csvData[csvData.length - 1];
+
+                document.getElementById('fileName').textContent = filename;
+                document.getElementById('currentAlgorithm').textContent = algorithm.toUpperCase();
+                document.getElementById('totalFrames').textContent = csvData.length;
+                document.getElementById('timeStart').textContent = firstRow['Timecode'];
+                document.getElementById('timeEnd').textContent = lastRow['Timecode'];
+                document.getElementById('videoDuration').textContent = lastRow['Timecode'];
+
+                if (serverScenes) {
+                    scenes = serverScenes.map(s => ({
+                        ...s,
+                        startSeconds: timecodeToSeconds(s.start_time),
+                        endSeconds: timecodeToSeconds(s.end_time)
+                    }));
+                } else {
+                    detectScenes();
+                }
+
+                updateStats();
+                updateChart();
+                updateSceneList();
+                updateTimeline();
+                updateParams();
+                setupVideoPlayer(filename);
+
+                content.style.display = 'block';
+            }
+        }
+
+        function setupVideoPlayer(filename) {
+            videoUrl = '/api/scenedetect/video/' + filename;
+            videoPlayer.src = videoUrl;
+            videoPlayer.load();
+        }
+
+        function resetUpload() {
+            content.style.display = 'none';
+            videoPlayer.src = '';
+            if (currentFilepath) {
+                fetch('/api/scenedetect/delete', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ filepath: currentFilepath })
+                });
+                currentFilepath = '';
+            }
+            // 恢复上传区
+            uploadSection.style.display = '';
+            uploadSection.classList.remove('processing');
+            progressContainer.style.display = 'none';
+            hidePreDetectPlayer();
+            fileInput.value = '';
+        }
+
+        function showError(msg) {
+            errorMessage.textContent = msg;
+            errorMessage.style.display = 'block';
+            progressContainer.style.display = 'none';
+            uploadSection.style.display = '';
+            uploadSection.classList.remove('processing');
+        }
+
+        function detectScenes() {
+            scenes = [];
+            let sceneStart = 0;
+
+            for (let i = 1; i < csvData.length; i++) {
+                const diffVal = parseFloat(csvData[i]['content_val'] || csvData[i]['delta_hsv'] || csvData[i]['delta'] || 0);
+
+                if (diffVal > threshold) {
+                    scenes.push({
+                        start: csvData[sceneStart],
+                        end: csvData[i],
+                        startFrame: parseInt(csvData[sceneStart]['Frame Number']),
+                        endFrame: parseInt(csvData[i]['Frame Number']),
+                        startTime: csvData[sceneStart]['Timecode'],
+                        endTime: csvData[i]['Timecode'],
+                        startSeconds: timecodeToSeconds(csvData[sceneStart]['Timecode']),
+                        endSeconds: timecodeToSeconds(csvData[i]['Timecode'])
+                    });
+                    sceneStart = i;
+                }
+            }
+
+            if (sceneStart < csvData.length - 1) {
+                scenes.push({
+                    start: csvData[sceneStart],
+                    end: csvData[csvData.length - 1],
+                    startFrame: parseInt(csvData[sceneStart]['Frame Number']),
+                    endFrame: parseInt(csvData[csvData.length - 1]['Frame Number']),
+                    startTime: csvData[sceneStart]['Timecode'],
+                    endTime: csvData[csvData.length - 1]['Timecode'],
+                    startSeconds: timecodeToSeconds(csvData[sceneStart]['Timecode']),
+                    endSeconds: timecodeToSeconds(csvData[csvData.length - 1]['Timecode'])
+                });
+            }
+        }
+
+        function timecodeToSeconds(timecode) {
+            const parts = timecode.split(':');
+            return parseFloat(parts[0]) * 3600 + parseFloat(parts[1]) * 60 + parseFloat(parts[2]);
+        }
+
+        function updateStats() {
+            document.getElementById('totalScenes').textContent = scenes.length;
+
+            if (scenes.length > 0) {
+                const totalDuration = scenes.reduce((sum, scene) => {
+                    return sum + (scene.endFrame - scene.startFrame);
+                }, 0);
+                const avgFrames = totalDuration / scenes.length;
+                const avgSeconds = (avgFrames / fps).toFixed(1);
+                document.getElementById('avgSceneDuration').textContent = avgSeconds + 's';
+            }
+        }
+
+        function updateChart() {
+            const ctx = document.getElementById('sceneChart').getContext('2d');
+
+            const frames = csvData.map(d => parseInt(d['Frame Number']));
+            const diffValues = csvData.map(d => parseFloat(d['content_val'] || d['delta_hsv'] || d['delta'] || 0));
+
+            const sceneBoundaryFrames = scenes.slice(0, -1).map(s => s.endFrame);
+
+            if (chart) {
+                chart.destroy();
+            }
+
+            chart = new Chart(ctx, {
+                type: 'line',
+                data: {
+                    labels: frames,
+                    datasets: [
+                        {
+                            label: '帧差异值',
+                            data: diffValues,
+                            borderColor: '#667eea',
+                            backgroundColor: 'rgba(102, 126, 234, 0.08)',
+                            borderWidth: 1,
+                            pointRadius: 0,
+                            fill: true,
+                            tension: 0.1
+                        },
+                        {
+                            label: '阈值',
+                            data: Array(frames.length).fill(threshold),
+                            borderColor: '#ff6b6b',
+                            borderWidth: 2,
+                            borderDash: [5, 5],
+                            pointRadius: 0,
+                            fill: false
+                        },
+                        {
+                            label: '场景边界',
+                            data: sceneBoundaryFrames.map(f => {
+                                const idx = frames.indexOf(f);
+                                return idx >= 0 ? diffValues[idx] : null;
+                            }),
+                            backgroundColor: '#64ffda',
+                            borderColor: '#64ffda',
+                            pointRadius: 5,
+                            pointHoverRadius: 7,
+                            fill: false
+                        }
+                    ]
+                },
+                options: {
+                    responsive: true,
+                    interaction: {
+                        mode: 'index',
+                        intersect: false
+                    },
+                    plugins: {
+                        legend: {
+                            display: true,
+                            labels: { color: '#e0e0e0', font: { size: 12 } }
+                        },
+                        tooltip: {
+                            backgroundColor: 'rgba(0,0,0,0.9)',
+                            titleColor: '#64ffda',
+                            bodyColor: '#e0e0e0',
+                            callbacks: {
+                                title: (items) => {
+                                    const frame = items[0].label;
+                                    const timecode = csvData[frame - 1]?.Timecode || '';
+                                    return `帧 ${frame} - ${timecode}`;
+                                }
+                            }
+                        }
+                    },
+                    scales: {
+                        x: {
+                            title: { display: true, text: '帧数', color: '#8892b0', font: { size: 12 } },
+                            ticks: { color: '#8892b0', maxTicksLimit: 8, font: { size: 11 } },
+                            grid: { color: 'rgba(255,255,255,0.08)' }
+                        },
+                        y: {
+                            title: { display: true, text: '差异值', color: '#8892b0', font: { size: 12 } },
+                            ticks: { color: '#8892b0', font: { size: 11 } },
+                            grid: { color: 'rgba(255,255,255,0.08)' }
+                        }
+                    },
+                    onClick: (e) => {
+                        const points = chart.getElementsAtEventForMode(e, 'nearest', { intersect: true }, true);
+                        if (points.length) {
+                            const idx = points[0].index;
+                            const frame = frames[idx];
+                            if (fps > 0) {
+                                videoPlayer.currentTime = frame / fps;
+                                videoPlayer.play().catch(function() {});
+                            }
+                        }
+                    }
+                }
+            });
+        }
+
+        function updateSceneList() {
+            const list = document.getElementById('sceneList');
+            list.innerHTML = '';
+
+            scenes.forEach((scene, index) => {
+                const item = document.createElement('div');
+                item.className = 'scene-item';
+                
+                const screenshotUrl = scene.screenshot ? `/api/scenedetect/screenshot/${scene.screenshot}` : '';
+                const thumbHtml = screenshotUrl
+                    ? `<img src="${screenshotUrl}" class="scene-thumbnail" alt="Scene ${index+1}" loading="lazy"
+                           onerror="this.style.display='none';this.nextElementSibling.style.display='flex'">
+                       <div class="scene-thumb-fallback" style="display:none;width:80px;height:50px;border-radius:4px;background:linear-gradient(135deg,#667eea,#764ba2);align-items:center;justify-content:center;font-size:18px;font-weight:700;color:#fff;flex-shrink:0">${index+1}</div>`
+                    : `<div class="scene-thumb-fallback" style="width:80px;height:50px;border-radius:4px;background:linear-gradient(135deg,#667eea,#764ba2);display:flex;align-items:center;justify-content:center;font-size:18px;font-weight:700;color:#fff;flex-shrink:0">${index+1}</div>`;
+
+                item.innerHTML = `
+                    ${thumbHtml}
+                    <div class="scene-info">
+                        <span class="scene-number">场景 ${index + 1}</span>
+                        <div class="scene-time">${scene.start_time || scene.startTime} → ${scene.end_time || scene.endTime}</div>
+                    </div>
+                `;
+                item.addEventListener('click', () => {
+                    playScene(index);
+                });
+                list.appendChild(item);
+            });
+        }
+
+        function updateTimeline() {
+            const track = document.getElementById('timelineTrack');
+            track.innerHTML = '';
+
+            const totalFrames = parseInt(csvData[csvData.length - 1]['Frame Number']);
+
+            scenes.forEach((scene, index) => {
+                const bar = document.createElement('div');
+                bar.className = 'timeline-bar';
+                const startFrame = scene.start_frame || scene.startFrame;
+                const endFrame = scene.end_frame || scene.endFrame;
+                const left = (startFrame / totalFrames) * 100;
+                const width = ((endFrame - startFrame) / totalFrames) * 100;
+                bar.style.left = left + '%';
+                bar.style.width = Math.max(width, 0.3) + '%';
+
+                bar.addEventListener('click', function(e) {
+                    e.stopPropagation();
+                    playScene(index);
+                });
+                bar.addEventListener('mouseenter', function() { bar.classList.add('active'); });
+                bar.addEventListener('mouseleave', function() { bar.classList.remove('active'); });
+
+                track.appendChild(bar);
+            });
+
+            // ── fenjing 模式：点击进度条任意位置直接 seek ──
+            const progressBar = document.getElementById('timelineProgress');
+            progressBar.onclick = function(e) {
+                if (!videoPlayer.duration) return;
+                const rect = progressBar.getBoundingClientRect();
+                const pct = (e.clientX - rect.left) / rect.width;
+                videoPlayer.currentTime = pct * videoPlayer.duration;
+            };
+        }
+
+        function playScene(index) {
+            if (index < 0 || index >= scenes.length) return;
+            currentSceneIndex = index;
+            const scene = scenes[index];
+            const startSeconds = scene.startSeconds || scene.start_seconds || 0;
+            const endSeconds   = scene.endSeconds   || scene.end_seconds   || 0;
+            currentSceneEndSec = endSeconds;
+
+            // fenjing 模式：设 currentTime 即 seek，浏览器自行处理
+            videoPlayer.currentTime = startSeconds;
+            videoPlayer.play().catch(function() {});
+
+            document.querySelectorAll('.scene-item').forEach(function(el, i) {
+                el.classList.toggle('active', i === index);
+            });
+        }
+
+        function playScenePrev() {
+            if (currentSceneIndex > 0) playScene(currentSceneIndex - 1);
+        }
+        function playSceneNext() {
+            if (currentSceneIndex < scenes.length - 1) playScene(currentSceneIndex + 1);
+        }
+
+        function updatePlayheadFromVideo() {
+            if (!videoPlayer.duration || fps <= 0) return;
+            const pct = (videoPlayer.currentTime / videoPlayer.duration) * 100;
+            document.getElementById('timelineFill').style.width = pct + '%';
+
+            // 高亮当前所在场景
+            const sceneIndex = scenes.findIndex(function(s) {
+                var ss = s.startSeconds || s.start_seconds || 0;
+                var se = s.endSeconds   || s.end_seconds   || 0;
+                return videoPlayer.currentTime >= ss && videoPlayer.currentTime <= se;
+            });
+            if (sceneIndex >= 0 && sceneIndex !== currentSceneIndex) {
+                currentSceneIndex = sceneIndex;
+                document.querySelectorAll('.scene-item').forEach(function(el, i) {
+                    el.classList.toggle('active', i === sceneIndex);
+                });
+            }
+        }
+
+        function updateParams() {
+            const params = document.getElementById('paramsList');
+            params.innerHTML = `
+                <div style="display: grid; gap: 8px;">
+                    <div style="display: flex; justify-content: space-between;">
+                        <span style="color: #8892b0;">检测算法</span>
+                        <span style="font-weight: 500;">${currentAlgorithm.toUpperCase()}</span>
+                    </div>
+                    <div style="display: flex; justify-content: space-between;">
+                        <span style="color: #8892b0;">当前阈值</span>
+                        <span style="font-weight: 500;">${threshold}</span>
+                    </div>
+                    <div style="display: flex; justify-content: space-between;">
+                        <span style="color: #8892b0;">帧率 (FPS)</span>
+                        <span style="font-weight: 500;">${fps.toFixed(2)}</span>
+                    </div>
+                    <div style="display: flex; justify-content: space-between;">
+                        <span style="color: #8892b0;">数据点数量</span>
+                        <span style="font-weight: 500;">${csvData.length}</span>
+                    </div>
+                    <div style="display: flex; justify-content: space-between;">
+                        <span style="color: #8892b0;">平均差异值</span>
+                        <span style="font-weight: 500;">${getAverageDiff().toFixed(2)}</span>
+                    </div>
+                    <div style="display: flex; justify-content: space-between;">
+                        <span style="color: #8892b0;">最大差异值</span>
+                        <span style="font-weight: 500;">${getMaxDiff().toFixed(2)}</span>
+                    </div>
+                </div>
+            `;
+        }
+
+        function getAverageDiff() {
+            const sum = csvData.reduce((acc, d) => {
+                return acc + parseFloat(d['content_val'] || d['delta_hsv'] || d['delta'] || 0);
+            }, 0);
+            return sum / csvData.length;
+        }
+
+        function getMaxDiff() {
+            return Math.max(...csvData.map(d => parseFloat(d['content_val'] || d['delta_hsv'] || d['delta'] || 0)));
+        }
+
+        function exportScenes() {
+            if (!currentFilename) {
+                showError('请先上传视频并分析');
+                return;
+            }
+
+            const xhr = new XMLHttpRequest();
+            xhr.open('POST', '/api/scenedetect/export');
+            xhr.setRequestHeader('Content-Type', 'application/json');
+            xhr.responseType = 'blob';
+
+            xhr.addEventListener('load', () => {
+                if (xhr.status === 200) {
+                    const blob = xhr.response;
+                    const url = window.URL.createObjectURL(blob);
+                    const a = document.createElement('a');
+                    a.href = url;
+                    a.download = `${currentFilename}_scenes.zip`;
+                    document.body.appendChild(a);
+                    a.click();
+                    document.body.removeChild(a);
+                    window.URL.revokeObjectURL(url);
+                } else {
+                    showError('导出失败: ' + xhr.status);
+                }
+            });
+
+            xhr.addEventListener('error', () => {
+                showError('导出失败，请重试');
+            });
+
+            const baseName = currentFilename.replace(/\.[^.]+$/, '');
+            xhr.send(JSON.stringify({ filename: baseName }));
+        }
+    </script>
+</body>
+</html>

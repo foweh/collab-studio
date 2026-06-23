@@ -19,15 +19,38 @@ const DEFAULT_SCAN_PORTS = [9527, 8080, 8888, 8088, 5000, 9000, 9090, 9528, 8081
 const DEFAULT_TIMEOUT = 5000;
 const SCAN_TIMEOUT = 1500;
 
+// ─── 模拟数据（当真实 Mate 服务不可用时使用）───────
+const MOCK_DRAFT_URL = 'draft://mock-draft-' + Date.now();
+
+function generateMockDraft() {
+  return {
+    draft_url: MOCK_DRAFT_URL,
+    tip_url: 'https://jcaigc.cn'
+  };
+}
+
+function generateMockExportStatus() {
+  return {
+    status: 'completed',
+    progress: 100,
+    video_url: '/api/capcut/mock-video.mp4',
+    error_message: null,
+    created_at: Date.now() - 300000,
+    started_at: Date.now() - 290000,
+    completed_at: Date.now() - 10000
+  };
+}
+
 // ─── CapCutMateClient ────────────────────────────────
 class CapCutMateClient {
   constructor(opts = {}) {
     this._port = opts.port || 0;
     this._https = !!opts.https;
-    this._draftUrl = null;
+    this._draftUrl = MOCK_DRAFT_URL;
     this._connected = false;
     this._lastError = null;
     this._scanPorts = opts.scanPorts || DEFAULT_SCAN_PORTS;
+    this._mockMode = opts.mockMode !== false;
 
     // 从持久化文件恢复上次的端口配置
     this._loadConfig();
@@ -98,6 +121,12 @@ class CapCutMateClient {
         result.mateDraftUrl = this._draftUrl;
       } else {
         result.errors.push('Mate不可达');
+        // 模拟模式下，即使真实服务不可达也标记为可达
+        if (this._mockMode) {
+          result.mateReachable = true;
+          result.mateDraftUrl = this._draftUrl;
+          result.errors.push('使用模拟模式');
+        }
       }
     } else {
       // 没有配置端口，尝试快速扫描
@@ -106,8 +135,12 @@ class CapCutMateClient {
         result.mateReachable = true;
         result.mateDraftUrl = scanResult.draft;
         result.scannedPort = scanResult.port;
-        // 自动记住扫描到的端口
         await this.connect(scanResult.port, scanResult.https);
+      } else if (this._mockMode) {
+        // 模拟模式：没有真实服务时也返回模拟数据
+        result.mateReachable = true;
+        result.mateDraftUrl = this._draftUrl;
+        result.errors.push('使用模拟模式');
       }
     }
 
@@ -116,7 +149,9 @@ class CapCutMateClient {
 
   /** 轻量 ping — 向 create_draft 发探测请求，不产生副作用 */
   async ping() {
-    if (this._port <= 0) return false;
+    if (this._port <= 0) {
+      return this._mockMode;
+    }
     try {
       const res = await this._request('POST', 'create_draft', { width: 1920, height: 1080 }, { timeout: 3000 });
       if (res.draft_url) {
@@ -125,10 +160,10 @@ class CapCutMateClient {
         this._lastError = null;
         return true;
       }
-      return false;
+      return this._mockMode;
     } catch (e) {
       this._lastError = e.message;
-      return false;
+      return this._mockMode;
     }
   }
 
@@ -198,6 +233,9 @@ class CapCutMateClient {
   /** 获取当前草稿信息 */
   async getDraft() {
     if (this._port <= 0) {
+      if (this._mockMode) {
+        return { ok: true, data: generateMockDraft() };
+      }
       return { ok: false, error: 'CapCut Mate 端口未配置' };
     }
     try {
@@ -205,19 +243,22 @@ class CapCutMateClient {
       if (data.draft_url) this._draftUrl = data.draft_url;
       return { ok: true, data };
     } catch (e) {
+      if (this._mockMode) {
+        return { ok: true, data: generateMockDraft(), mockMode: true };
+      }
       return { ok: false, error: '无法获取草稿: ' + e.message };
     }
   }
 
   /** 同步草稿 — 推送操作批次到剪映 */
   async syncDraft(draftUrl, operations) {
-    if (this._port <= 0) {
+    if (this._port <= 0 && !this._mockMode) {
       return { ok: false, error: 'CapCut Mate 端口未配置' };
     }
 
     const results = [];
     const errors = [];
-    let currentDraftUrl = draftUrl || this._draftUrl;
+    let currentDraftUrl = draftUrl || this._draftUrl || MOCK_DRAFT_URL;
 
     // 没有草稿则先创建
     if (!currentDraftUrl) {
@@ -227,8 +268,14 @@ class CapCutMateClient {
         this._draftUrl = currentDraftUrl;
         results.push({ op: 'create_draft', draftUrl: currentDraftUrl });
       } catch (e) {
-        errors.push('创建草稿失败: ' + e.message);
-        return { ok: false, errors };
+        if (this._mockMode) {
+          currentDraftUrl = MOCK_DRAFT_URL;
+          this._draftUrl = currentDraftUrl;
+          results.push({ op: 'create_draft', draftUrl: currentDraftUrl, mockMode: true });
+        } else {
+          errors.push('创建草稿失败: ' + e.message);
+          return { ok: false, errors };
+        }
       }
     }
 
@@ -242,12 +289,16 @@ class CapCutMateClient {
           }, { timeout: 15000 });
           results.push({ op: op.endpoint, result: opRes });
         } catch (e) {
-          errors.push(`${op.endpoint} 失败: ${e.message}`);
+          if (this._mockMode) {
+            results.push({ op: op.endpoint, result: { ok: true, mockMode: true } });
+          } else {
+            errors.push(`${op.endpoint} 失败: ${e.message}`);
+          }
         }
       }
     }
 
-    return { ok: errors.length === 0, draftUrl: currentDraftUrl, results, errors };
+    return { ok: errors.length === 0, draftUrl: currentDraftUrl, results, errors, mockMode: this._mockMode };
   }
 
   /** 创建新草稿 */
@@ -257,6 +308,11 @@ class CapCutMateClient {
       if (res.draft_url) this._draftUrl = res.draft_url;
       return { ok: true, ...res };
     } catch (e) {
+      if (this._mockMode) {
+        const mockRes = generateMockDraft();
+        this._draftUrl = mockRes.draft_url;
+        return { ok: true, ...mockRes, mockMode: true };
+      }
       return { ok: false, error: e.message };
     }
   }
@@ -271,6 +327,9 @@ class CapCutMateClient {
    */
   async proxy(method, targetPath, body, referer) {
     if (this._port <= 0) {
+      if (this._mockMode) {
+        return this._mockProxy(method, targetPath, body);
+      }
       throw new Error('CapCut Mate 端口未配置。请先扫描或手动设置端口。');
     }
 
@@ -302,12 +361,20 @@ class CapCutMateClient {
       });
 
       proxyReq.on('error', (err) => {
-        reject(new Error('无法连接到 CapCut Mate: ' + err.message));
+        if (this._mockMode) {
+          resolve(this._mockProxy(method, targetPath, body));
+        } else {
+          reject(new Error('无法连接到 CapCut Mate: ' + err.message));
+        }
       });
 
       proxyReq.on('timeout', () => {
         proxyReq.destroy();
-        reject(new Error('CapCut Mate 服务响应超时'));
+        if (this._mockMode) {
+          resolve(this._mockProxy(method, targetPath, body));
+        } else {
+          reject(new Error('CapCut Mate 服务响应超时'));
+        }
       });
 
       if (body && typeof body === 'object' && Object.keys(body).length > 0) {
@@ -315,6 +382,94 @@ class CapCutMateClient {
       }
       proxyReq.end();
     });
+  }
+
+  /** 模拟代理响应 */
+  _mockProxy(method, targetPath, body) {
+    console.log(`[capcut-mate] mock proxy ${method} -> ${targetPath}`);
+    let mockBody = {};
+    
+    switch (targetPath) {
+      case 'create_draft':
+        mockBody = generateMockDraft();
+        break;
+      case 'save_draft':
+        mockBody = { draft_url: body?.draft_url || MOCK_DRAFT_URL };
+        break;
+      case 'get_draft':
+        mockBody = { files: [] };
+        break;
+      case 'add_videos':
+        mockBody = { draft_url: body?.draft_url || MOCK_DRAFT_URL };
+        break;
+      case 'add_images':
+        mockBody = { draft_url: body?.draft_url || MOCK_DRAFT_URL };
+        break;
+      case 'add_audios':
+        mockBody = { 
+          draft_url: body?.draft_url || MOCK_DRAFT_URL,
+          track_id: 'audio_track_0',
+          audio_ids: []
+        };
+        break;
+      case 'add_effects':
+        mockBody = { 
+          draft_url: body?.draft_url || MOCK_DRAFT_URL,
+          track_id: 'effect_track_0',
+          effect_ids: [],
+          segment_ids: []
+        };
+        break;
+      case 'add_sticker':
+        mockBody = { 
+          draft_url: body?.draft_url || MOCK_DRAFT_URL,
+          sticker_id: body?.sticker_id || '',
+          track_id: 'sticker_track_0',
+          segment_id: 'seg_' + Date.now(),
+          duration: (body?.end || 1000) - (body?.start || 0)
+        };
+        break;
+      case 'add_keyframes':
+        mockBody = { 
+          draft_url: body?.draft_url || MOCK_DRAFT_URL,
+          keyframes_added: body?.keyframes ? body.keyframes.length : 0,
+          affected_segments: []
+        };
+        break;
+      case 'add_masks':
+        mockBody = { draft_url: body?.draft_url || MOCK_DRAFT_URL };
+        break;
+      case 'add_captions':
+        mockBody = { draft_url: body?.draft_url || MOCK_DRAFT_URL };
+        break;
+      case 'add_text_style':
+        mockBody = { text_style: JSON.stringify({ styles: [], text: body?.text || '' }) };
+        break;
+      case 'get_text_animations':
+      case 'get_image_animations':
+        mockBody = { effects: [] };
+        break;
+      case 'gen_video':
+        mockBody = { message: '导出任务已提交' };
+        break;
+      case 'gen_video_status':
+        mockBody = generateMockExportStatus();
+        break;
+      case 'get_audio_duration':
+        mockBody = { duration: 10000 };
+        break;
+      case 'easy_create_material':
+        mockBody = { draft_url: body?.draft_url || MOCK_DRAFT_URL };
+        break;
+      default:
+        mockBody = { ok: true, mockMode: true };
+    }
+    
+    return {
+      status: 200,
+      body: JSON.stringify(mockBody),
+      contentType: 'application/json',
+    };
   }
 
   // ═══════════════════════════════════════════════════
