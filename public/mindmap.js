@@ -186,6 +186,22 @@ window.openMindMapEditor = function(project) {
   const cleanName = (project.name || '').replace(/^[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}\u{2702}-\u{27B0}\s]+/u, '');
   titleEl.textContent = `🧠 ${esc(cleanName || project.name)}`;
   const data = project.data || { nodes: [], edges: [] };
+  // 如果服务端数据为空，尝试从浏览器本地备份恢复
+  if ((!data.nodes || data.nodes.length === 0) && (!data.edges || data.edges.length === 0)) {
+    try {
+      const backup = localStorage.getItem('mm-backup-' + project.id);
+      if (backup) {
+        const parsed = JSON.parse(backup);
+        if (parsed.nodes && parsed.nodes.length > 0) {
+          data.nodes = parsed.nodes;
+          data.edges = parsed.edges || [];
+          project.data = data;
+          // 异步回写服务端
+          socket.emit('project-update', { id: project.id, data: project.data });
+        }
+      }
+    } catch(e) { /* ignore */ }
+  }
   nodes = JSON.parse(JSON.stringify(data.nodes || []));
   edges = JSON.parse(JSON.stringify(data.edges || []));
   nodeCounter = nodes.reduce((m, n) => Math.max(m, parseInt(n.id.replace('n','')) || 0), 0);
@@ -683,6 +699,42 @@ function onSelectionChanged() {
 // ─── 连接线拖拽 ──────────────────────────────────────────
 let connDrag = null;
 
+// ─── 检测鼠标是否靠近某条连接线 ─────────────────────────
+function hitTestEdge(sx, sy) {
+  const w = screenToWorld(sx, sy);
+  const THRESHOLD = 10 / camera.zoom; // 世界坐标阈值
+  let bestEdge = null, bestDist = Infinity;
+
+  for (const e of edges) {
+    const from = nodes.find(n => n.id === e.from);
+    const to = nodes.find(n => n.id === e.to);
+    if (!from || !to) continue;
+    if (isCollapsed(to)) continue;
+
+    const fx = from.x + (from.width || NODE_MIN_W);
+    const fy = from.y + (from.height || NODE_H) / 2;
+    const tx = to.x;
+    const ty = to.y + (to.height || NODE_H) / 2;
+    const cx = (fx + tx) / 2;
+
+    // 采样 Bezier 曲线上的点（三次贝塞尔）
+    // P0=(fx,fy), P1=(cx,fy), P2=(cx,ty), P3=(tx,ty)
+    const steps = 30;
+    for (let i = 0; i <= steps; i++) {
+      const t = i / steps;
+      const mt = 1 - t;
+      const x = mt*mt*mt*fx + 3*mt*mt*t*cx + 3*mt*t*t*cx + t*t*t*tx;
+      const y = mt*mt*mt*fy + 3*mt*mt*t*fy + 3*mt*t*t*ty + t*t*t*ty;
+      const dist = Math.hypot(w.x - x, w.y - y);
+      if (dist < bestDist) {
+        bestDist = dist;
+        bestEdge = e;
+      }
+    }
+  }
+  return bestDist <= THRESHOLD ? bestEdge : null;
+}
+
 /** 检测鼠标是否在节点右侧连接点上 */
 function hitNodeConnector(sx, sy) {
   const w = screenToWorld(sx, sy);
@@ -1055,8 +1107,18 @@ function onContextMenu(e) {
   const sx = e.clientX - rect.left, sy = e.clientY - rect.top;
   const hit = hitTest(sx, sy);
 
-  // ── 右键空白区域 ──
+  // ── 右键空白区域 / 连接线 ──
   if (!hit) {
+    // 检测是否右键在连接线上
+    const edgeHit = hitTestEdge(sx, sy);
+    if (edgeHit) {
+      const items = [
+        { icon: '🗑', label: `删除连线`, action: () => { deleteEdge(edgeHit.from, edgeHit.to); showToast(`已删除连线`); } },
+      ];
+      buildContextMenu(items, e);
+      return;
+    }
+
     const items = [
       { icon: '➕', label: '新建节点', action: () => { const w = screenToWorld(sx, sy); pushUndo(); const id = addNodeInternal('新节点', COLORS[nodeCounter % COLORS.length]); const n = nodes.find(x => x.id === id); if (n) { n.x = w.x - 50; n.y = w.y - NODE_H/2; } selectedIds.clear(); selectedIds.add(id); render(); saveData(); } },
       { icon: '📄', label: '粘贴', shortcut: '⌘V', action: pasteNodes },
@@ -1437,6 +1499,12 @@ function addParent() {
   render(); saveData();
 }
 
+function deleteEdge(from, to) {
+  pushUndo();
+  edges = edges.filter(e => !(e.from === from && e.to === to));
+  render(); saveData();
+}
+
 function deleteSelected() {
   if (selectedIds.size === 0) return;
   pushUndo();
@@ -1653,6 +1721,14 @@ window.addEventListener('locks-changed', () => {
 function saveData() {
   if (!currentProject) return;
   currentProject.data = { nodes: nodes.map(n => ({...n})), edges: edges.map(e => ({...e})) };
+  // 浏览器本地持久化（断网/服务端崩溃不丢数据）
+  try {
+    localStorage.setItem('mm-backup-' + currentProject.id, JSON.stringify({
+      nodes: currentProject.data.nodes,
+      edges: currentProject.data.edges,
+      ts: Date.now()
+    }));
+  } catch(e) { /* 配额满则静默忽略 */ }
   socket.emit('project-update', { id: currentProject.id, data: currentProject.data });
   // 实时同步给其他用户
   socket.emit('realtime-event', {
