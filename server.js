@@ -136,7 +136,7 @@ function proxyToFlask(req, res, pathSuffix) {
     path: '/' + pathSuffix,
     method: req.method,
     headers: { ...req.headers },
-    timeout: 300000 // 5min for long analysis
+    timeout: 1800000 // 30min - 大视频上传+分析需要较长时间
   };
   // Remove host header to avoid conflict
   delete options.headers.host;

@@ -28,7 +28,7 @@ app.config['UPLOAD_FOLDER'] = os.path.join(os.path.dirname(os.path.abspath(__fil
 app.config['SCREENSHOT_FOLDER'] = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'screenshots')
 os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
 os.makedirs(app.config['SCREENSHOT_FOLDER'], exist_ok=True)
-app.config['MAX_CONTENT_LENGTH'] = 500 * 1024 * 1024
+app.config['MAX_CONTENT_LENGTH'] = 2 * 1024 * 1024 * 1024  # 2GB 大视频支持
 
 ALLOWED_EXTENSIONS = {'mp4', 'avi', 'mov', 'mkv', 'flv', 'wmv'}
 
@@ -453,4 +453,4 @@ def system_info():
 if __name__ == '__main__':
     print("Starting Scene Detection Web Server...")
     print("Server running at: http://localhost:5000")
-    app.run(host='0.0.0.0', port=5000, debug=False)
+    app.run(host='0.0.0.0', port=5000, debug=False, threaded=True)

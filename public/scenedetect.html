@@ -528,6 +528,12 @@
         }
 
         function startDetection(file) {
+            // 文件大小检查（> 1.8GB 提醒用户）
+            if (file.size > 1.8 * 1024 * 1024 * 1024) {
+                showError('文件过大（超过 1.8GB），请压缩视频后重试');
+                return;
+            }
+
             pdPlayer.classList.remove('show');
             errorMessage.style.display = 'none';
             progressContainer.style.display = 'block';
@@ -559,13 +565,21 @@
                     } else {
                         showError(result.error || '上传失败');
                     }
+                } else if (xhr.status === 413) {
+                    showError('文件过大，超过服务端限制。请压缩视频后重试（建议 < 2GB）');
+                } else if (xhr.status === 502) {
+                    showError('场景检测服务未启动，请重启服务器');
                 } else {
-                    showError('上传失败: ' + xhr.status);
+                    showError('上传失败 (HTTP ' + xhr.status + ')，请重试');
                 }
             });
             xhr.addEventListener('error', function() {
-                showError('网络错误，请重试');
+                showError('网络错误，请检查：\n1. 视频是否过大（建议 < 2GB）\n2. 网络是否稳定\n3. 服务器是否正常运行');
             });
+            xhr.addEventListener('timeout', function() {
+                showError('上传超时，视频文件可能过大。建议压缩后重试');
+            });
+            xhr.timeout = 1800000; // 30分钟超时，与服务器保持一致
             xhr.open('POST', '/api/scenedetect/upload');
             xhr.send(formData);
         }
@@ -606,8 +620,14 @@
 
             xhr.addEventListener('error', () => {
                 stopPolling();
-                showError('分析失败，请重试');
+                showError('分析请求失败，请检查服务器是否正常运行');
             });
+
+            xhr.addEventListener('timeout', () => {
+                stopPolling();
+                showError('分析超时，视频可能过大或场景过多，建议压缩视频后重试');
+            });
+            xhr.timeout = 1800000; // 30分钟
 
             xhr.send(JSON.stringify({
                 filepath: filepath,
