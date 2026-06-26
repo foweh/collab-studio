@@ -185,25 +185,32 @@ window.openMindMapEditor = function(project) {
   // 去掉项目名中可能自带的 emoji（防止双图标）
   const cleanName = (project.name || '').replace(/^[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}\u{2702}-\u{27B0}\s]+/u, '');
   titleEl.textContent = `🧠 ${esc(cleanName || project.name)}`;
-  const data = project.data || { nodes: [], edges: [] };
-  // 如果服务端数据为空，尝试从浏览器本地备份恢复
-  if ((!data.nodes || data.nodes.length === 0) && (!data.edges || data.edges.length === 0)) {
-    try {
-      const backup = localStorage.getItem('mm-backup-' + project.id);
-      if (backup) {
-        const parsed = JSON.parse(backup);
-        if (parsed.nodes && parsed.nodes.length > 0) {
-          data.nodes = parsed.nodes;
-          data.edges = parsed.edges || [];
+  let data = project.data || { nodes: [], edges: [] };
+  // 服务端数据为空时从浏览器本地备份恢复
+  try {
+    if (!data.nodes || data.nodes.length === 0) {
+      const backupRaw = localStorage.getItem('mm-backup-' + project.id);
+      if (backupRaw) {
+        const backup = JSON.parse(backupRaw);
+        if (backup.nodes && backup.nodes.length > 0) {
+          data = { nodes: backup.nodes, edges: backup.edges || [] };
           project.data = data;
           // 异步回写服务端
           socket.emit('project-update', { id: project.id, data: project.data });
         }
       }
-    } catch(e) { /* ignore */ }
-  }
+    }
+  } catch(e) { /* ignore */ }
   nodes = JSON.parse(JSON.stringify(data.nodes || []));
   edges = JSON.parse(JSON.stringify(data.edges || []));
+  // 每次打开时同步更新本地备份（确保关闭重开数据不丢）
+  try {
+    localStorage.setItem('mm-backup-' + project.id, JSON.stringify({
+      nodes: data.nodes || [],
+      edges: data.edges || [],
+      ts: Date.now()
+    }));
+  } catch(e) {}
   nodeCounter = nodes.reduce((m, n) => Math.max(m, parseInt(n.id.replace('n','')) || 0), 0);
   undoStack = []; redoStack = [];
   if (nodes.length === 0) {
@@ -1759,6 +1766,14 @@ socket.on('mindmap-updated', (data) => {
     nodes = JSON.parse(JSON.stringify(data.data.nodes || []));
     edges = JSON.parse(JSON.stringify(data.data.edges || []));
     nodeCounter = nodes.reduce((m, n) => Math.max(m, parseInt(n.id.replace('n','')) || 0), 0);
+    // 同步更新浏览器本地备份
+    try {
+      localStorage.setItem('mm-backup-' + currentProject.id, JSON.stringify({
+        nodes: data.data.nodes || [],
+        edges: data.data.edges || [],
+        ts: Date.now()
+      }));
+    } catch(e) {}
     render();
   }
 });
@@ -1803,6 +1818,18 @@ document.addEventListener('keydown', (e) => {
     case 'Delete': case 'Backspace': e.preventDefault(); deleteSelected(); break;
     case ' ': case 'F2': e.preventDefault(); const n = getSelectedNode(); if (n) startEditing(n); break;
   }
+});
+
+// ─── 关闭页面前最后保存（防止数据丢失） ─────────────────
+window.addEventListener('beforeunload', () => {
+  if (!currentProject || !nodes.length) return;
+  try {
+    localStorage.setItem('mm-backup-' + currentProject.id, JSON.stringify({
+      nodes: nodes.map(n => ({...n})),
+      edges: edges.map(e => ({...e})),
+      ts: Date.now()
+    }));
+  } catch(e) {}
 });
 
 // ─── 工具栏 ──────────────────────────────────────────────
