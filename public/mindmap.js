@@ -1130,7 +1130,7 @@ function onContextMenu(e) {
       { sep: true },
       { icon: '−', label: '缩小', action: zoomOut },
       { icon: '+', label: '放大', action: zoomIn },
-      { icon: '🗑', label: '清空导图', action: async () => { if (await showConfirm('清空所有节点？', '清空确认', '🗑️')) { pushUndo(); nodes = []; edges = []; selectedIds.clear(); render(); saveData(); } } },
+      { icon: '🗑', label: '清空导图', action: async () => { if (await showConfirm('清空所有节点？', '清空确认', '🗑️')) { if (currentProject) { try { localStorage.removeItem('mm-backup-' + currentProject.id); } catch(e) {} } pushUndo(); nodes = []; edges = []; selectedIds.clear(); render(); saveData(); } } },
     ];
     buildContextMenu(items, e);
     return;
@@ -1505,6 +1505,21 @@ function deleteEdge(from, to) {
   render(); saveData();
 }
 
+// ─── 清除所有数据（含本地备份） ──────────────────────────
+async function clearAllMindmapData() {
+  if (!await showConfirm('确定清除所有节点和连线吗？\n浏览器本地备份也将一并清除。', '清除确认', '🧹')) return;
+  // 清除浏览器本地备份
+  if (currentProject) {
+    try { localStorage.removeItem('mm-backup-' + currentProject.id); } catch(e) {}
+  }
+  pushUndo();
+  nodes = [];
+  edges = [];
+  selectedIds.clear();
+  render(); saveData();
+  showToast('🧹 已清除所有数据');
+}
+
 function deleteSelected() {
   if (selectedIds.size === 0) return;
   pushUndo();
@@ -1813,6 +1828,7 @@ if (mmAddNodeBtn) mmAddNodeBtn.addEventListener('click', () => document.getEleme
 document.getElementById('mm-add-child').addEventListener('click', addChild);
 document.getElementById('mm-add-sibling').addEventListener('click', addSibling);
 document.getElementById('mm-delete-node').addEventListener('click', deleteSelected);
+document.getElementById('mm-clear-data').addEventListener('click', clearAllMindmapData);
 
 // 事件绑定（按钮已在 HTML 中）
 document.getElementById('mm-undo').addEventListener('click', undo);
