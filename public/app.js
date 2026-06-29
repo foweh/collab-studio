@@ -1159,12 +1159,14 @@ socket.on('init', (data) => {
   serverId = data.serverId;
   serverName = data.serverName;
   const cached = loadProjectCache();
-  if (cached && cached.length > 0) {
-    // 有新鲜缓存 → 先用缓存，等广播更新
+  if (cached && cached.length > 0 && cached.length === (data.projects || []).length) {
+    // 缓存项目数与服务器一致 → 用缓存（避免闪烁）
     projects = cached;
     console.log('[缓存] 使用本地项目缓存, 共', cached.length, '个项目');
   } else {
+    // 缓存为空或与服务端不一致 → 以服务端为准
     projects = data.projects || [];
+    saveProjectCache(projects);
   }
   peers = data.peers || [];
   onlineUsers = data.onlineUsers || [];

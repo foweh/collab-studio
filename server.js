@@ -193,6 +193,9 @@ function getFilteredProjects(userName, allProjects) {
   const isAdmin = user && user.isAdmin;
   return (allProjects || projects).filter(p => {
     if (p.deleted) return false;                 // 已删除不显示
+    // 文件夹始终展示（不按 owner/visibility 过滤），让所有用户能看到
+    // 完整的目录树；进入文件夹的内容查看权限仍由前端 canViewFolder 校验
+    if (p.type === 'folder') return true;
     if (isAdmin) return true;                     // 管理员看全部
     if (p.owner === userName) return true;        // 所有者看自己的
     if (p.visibility !== 'private') return true;  // 公开项目所有人可见
