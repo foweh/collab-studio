@@ -2,7 +2,10 @@
 const fs = require('fs');
 const path = require('path');
 
-const DATA_DIR = path.join(__dirname, '..', 'data');
+const BASE_DIR = process.pkg
+  ? path.dirname(process.execPath)
+  : path.join(__dirname, '..');
+const DATA_DIR = path.join(BASE_DIR, 'data');
 
 function ensureDataDir() {
   if (!fs.existsSync(DATA_DIR)) {
