@@ -18,6 +18,9 @@ const API_PREFIX = '/openapi/capcut-mate/v1';
 const DEFAULT_SCAN_PORTS = [9527, 8080, 8888, 8088, 5000, 9000, 9090, 9528, 8081, 8089];
 const DEFAULT_TIMEOUT = 5000;
 const SCAN_TIMEOUT = 1500;
+// 草稿默认分辨率（P2-14：集中魔法数字）
+const DRAFT_DEFAULT_WIDTH = 1920;
+const DRAFT_DEFAULT_HEIGHT = 1080;
 
 // ─── 模拟数据（当真实 Mate 服务不可用时使用）───────
 const MOCK_DRAFT_URL = 'draft://mock-draft-' + Date.now();
@@ -154,7 +157,7 @@ class CapCutMateClient {
       return this._mockMode;
     }
     try {
-      const res = await this._request('POST', 'create_draft', { width: 1920, height: 1080 }, { timeout: 3000 });
+      const res = await this._request('POST', 'create_draft', { width: DRAFT_DEFAULT_WIDTH, height: DRAFT_DEFAULT_HEIGHT }, { timeout: 3000 });
       if (res.draft_url) {
         this._draftUrl = res.draft_url;
         this._connected = true;
@@ -240,7 +243,7 @@ class CapCutMateClient {
       return { ok: false, error: 'CapCut Mate 端口未配置' };
     }
     try {
-      const data = await this._request('POST', 'create_draft', { width: 1920, height: 1080 });
+      const data = await this._request('POST', 'create_draft', { width: DRAFT_DEFAULT_WIDTH, height: DRAFT_DEFAULT_HEIGHT });
       if (data.draft_url) this._draftUrl = data.draft_url;
       return { ok: true, data };
     } catch (e) {
@@ -264,7 +267,7 @@ class CapCutMateClient {
     // 没有草稿则先创建
     if (!currentDraftUrl) {
       try {
-        const createRes = await this._request('POST', 'create_draft', { width: 1920, height: 1080 });
+        const createRes = await this._request('POST', 'create_draft', { width: DRAFT_DEFAULT_WIDTH, height: DRAFT_DEFAULT_HEIGHT });
         currentDraftUrl = createRes.draft_url;
         this._draftUrl = currentDraftUrl;
         results.push({ op: 'create_draft', draftUrl: currentDraftUrl });
@@ -303,7 +306,7 @@ class CapCutMateClient {
   }
 
   /** 创建新草稿 */
-  async createDraft(width = 1920, height = 1080) {
+  async createDraft(width = DRAFT_DEFAULT_WIDTH, height = DRAFT_DEFAULT_HEIGHT) {
     try {
       const res = await this._request('POST', 'create_draft', { width, height });
       if (res.draft_url) this._draftUrl = res.draft_url;
@@ -541,7 +544,7 @@ class CapCutMateClient {
       });
       req.on('error', () => resolve({ port: portNum, ok: false }));
       req.on('timeout', () => { req.destroy(); resolve({ port: portNum, ok: false }); });
-      req.write(JSON.stringify({ width: 1920, height: 1080 }));
+      req.write(JSON.stringify({ width: DRAFT_DEFAULT_WIDTH, height: DRAFT_DEFAULT_HEIGHT }));
       req.end();
     });
 
@@ -567,7 +570,7 @@ class CapCutMateClient {
       });
       req.on('error', () => resolve({ port: portNum, ok: false }));
       req.on('timeout', () => { req.destroy(); resolve({ port: portNum, ok: false }); });
-      req.write(JSON.stringify({ width: 1920, height: 1080 }));
+      req.write(JSON.stringify({ width: DRAFT_DEFAULT_WIDTH, height: DRAFT_DEFAULT_HEIGHT }));
       req.end();
     });
 
@@ -597,7 +600,7 @@ class CapCutMateClient {
       });
       req.on('error', () => resolve(null));
       req.on('timeout', () => { req.destroy(); resolve(null); });
-      req.write(JSON.stringify({ width: 1920, height: 1080 }));
+      req.write(JSON.stringify({ width: DRAFT_DEFAULT_WIDTH, height: DRAFT_DEFAULT_HEIGHT }));
       req.end();
     }));
     const results = await Promise.all(probes);
@@ -685,7 +688,7 @@ class CapCutMateClient {
   async _ensureDraft() {
     if (this._draftUrl) return;
     try {
-      const r = await this._request('POST', 'create_draft', { width: 1920, height: 1080 });
+      const r = await this._request('POST', 'create_draft', { width: DRAFT_DEFAULT_WIDTH, height: DRAFT_DEFAULT_HEIGHT });
       if (r.draft_url) this._draftUrl = r.draft_url;
     } catch (e) { /* 静默失败，后续操作会自行创建 */ }
   }

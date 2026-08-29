@@ -98,6 +98,14 @@ let HTTP_PORT = parseInt(process.env.PORT) || 3000;
 const UDP_PORT = 41234;
 const SCAN_DURATION = 5 * 60 * 1000;
 
+// ─── 集中配置常量（P2-14：魔法数字集中，不改行为） ──────
+const MAX_AVATAR_BYTES = 2 * 1024 * 1024;   // 头像 2MB
+const MAX_AVATAR_PER_DAY = 5;                // 头像每天最多 5 次
+const MAX_BOARD_ELEMENT_BYTES = 50000;       // 白板单元素 50KB
+const MAX_HTTP_JSON_TIMEOUT = 15000;         // 音乐代理 15s
+const HTTP_REDIRECT_FROM_PORT = 3000;        // HTTP→HTTPS 重定向源端口
+const MAX_BODY_LIMIT = '3mb';                // JSON body 上限
+
 let JOIN_TARGET = null;
 let CAPCUT_MATE_PORT = parseInt(process.env.CAPCUT_MATE_PORT) || 0;
 for (let i = 0; i < args.length; i++) {
@@ -465,7 +473,7 @@ app.use(helmet({
   originAgentCluster: false,
   strictTransportSecurity: false, // localhost 不需要 HSTS，避免强制 HTTPS 导致连接失败
 }));
-app.use(express.json({ limit: '3mb' }));
+app.use(express.json({ limit: MAX_BODY_LIMIT }));
 
 // ─── TLS 证书 ──────────────────────────────────────────
 let sslOptions = null;
@@ -498,14 +506,14 @@ app.post('/api/upload-avatar', async (req, res) => {
     const { name, imageData } = req.body;
     if (!name || !validateString(name, 50) || !imageData) return res.json({ error: '缺少参数' });
     if (!users[name]) return res.json({ error: '用户不存在' });
-    if (!checkRateLimit(`avatar:${name}`, 5, 86400000)) {
+    if (!checkRateLimit(`avatar:${name}`, MAX_AVATAR_PER_DAY, 86400000)) {
       return res.json({ error: '头像修改过于频繁，每天最多5次' });
     }
     const matches = imageData.match(/^data:image\/(png|jpg|jpeg|gif);base64,(.+)$/);
     if (!matches) return res.json({ error: '不支持的图片格式，仅支持 png/jpg/gif' });
     const ext = matches[1] === 'jpeg' ? 'jpg' : matches[1];
     const buffer = Buffer.from(matches[2], 'base64');
-    if (buffer.length > 2 * 1024 * 1024) return res.json({ error: '图片过大，最大2MB' });
+    if (buffer.length > MAX_AVATAR_BYTES) return res.json({ error: '图片过大，最大2MB' });
     const safeName = name.replace(/[^a-zA-Z0-9_\u4e00-\u9fff]/g, '_');
     const filename = `avatar_${safeName}_${Date.now()}.${ext}`;
     const filepath = path.join(__dirname, 'public', 'avatars', filename);
@@ -963,7 +971,7 @@ function httpJSON(url, opts = {}) {
       });
     });
     req.on('error', reject);
-    req.setTimeout(15000, () => { req.destroy(); reject(new Error('timeout')); });
+    req.setTimeout(MAX_HTTP_JSON_TIMEOUT, () => { req.destroy(); reject(new Error('timeout')); });
     if (opts.body) req.write(opts.body);
     req.end();
   });
@@ -1602,7 +1610,7 @@ io.on('connection', (socket) => {
   socket.on('whiteboard:add', (el) => {
     if (!el || !el.id || typeof el.id !== 'string' || el.id.length > 100) return;
     const elStr = JSON.stringify(el);
-    if (elStr.length > 50000) return; // 单元素最大50KB
+    if (elStr.length > MAX_BOARD_ELEMENT_BYTES) return; // 单元素最大50KB
     el.createdBy = socket.userName || el.createdBy;
     el.modifiedBy = socket.userName || el.modifiedBy;
     board.set(el.id, el);
@@ -1614,7 +1622,7 @@ io.on('connection', (socket) => {
   socket.on('whiteboard:update', ({ id, patch }) => {
     if (!id || typeof id !== 'string' || id.length > 100) return;
     const patchStr = JSON.stringify(patch || {});
-    if (patchStr.length > 50000) return;
+    if (patchStr.length > MAX_BOARD_ELEMENT_BYTES) return;
     patch.modifiedBy = socket.userName || patch.modifiedBy;
     const existing = board.get(id);
     if (existing) {
@@ -2903,7 +2911,7 @@ function startServer(port) {
   if (sslOptions) {
     const httpApp = express();
     httpApp.use((req, res) => {
-      const host = req.headers.host ? req.headers.host.replace(/:3000/, '') : ip;
+      const host = req.headers.host ? req.headers.host.replace(new RegExp(':' + HTTP_REDIRECT_FROM_PORT), '') : ip;
       res.redirect(301, `https://${host}:${HTTPS_PORT}${req.url}`);
     });
     http.createServer(httpApp).listen(HTTP_PORT, '0.0.0.0', () => {

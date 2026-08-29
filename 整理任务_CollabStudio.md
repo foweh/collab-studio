@@ -147,12 +147,12 @@ Collab Studio 是一个"创作协作全家桶":剧本/故事/导图/分镜实时
 - 验收:非白名单 URL 请求被拒绝(✅ 白名单逻辑 10 个用例全通过:酷狗/QQ音乐/lxmusic 放行,127.0.0.1/localhost/内网/AWS metadata/伪造后缀域名均拒绝;同时校验协议白名单 http/https,URL 解析失败兜底)
 
 ### P2-14:魔法数字集中
-- 状态:[ ]
+- 状态:[x]
 - 问题:`1920×1080`、`:3000`、`2MB`、`500` 等散落各处
 - 涉及文件:`server.js`、`services/capcut-mate.js`
 - 修复:集中到文件顶部 `CONFIG` 常量,不改行为
 - 预期结果:常量集中定义,便于调整
-- 验收:各引用点使用常量且行为不变
+- 验收:各引用点使用常量且行为不变(✅ server.js 新增 MAX_AVATAR_BYTES/MAX_AVATAR_PER_DAY/MAX_BOARD_ELEMENT_BYTES/MAX_HTTP_JSON_TIMEOUT/HTTP_REDIRECT_FROM_PORT/MAX_BODY_LIMIT;capcut-mate.js 新增 DRAFT_DEFAULT_WIDTH/HEIGHT,9 处 1920×1080 全部替换;冒烟测试登录/白板/建项目正常)
 
 ### P2-15:README 补齐
 - 状态:[ ]
@@ -181,5 +181,5 @@ Collab Studio 是一个"创作协作全家桶":剧本/故事/导图/分镜实时
 | P2-11 | [x] | - | - |
 | P2-12 | [x] | - | - |
 | P2-13 | [x] | - | - |
-| P2-14 | [ ] | - | - |
+| P2-14 | [x] | - | - |
 | P2-15 | [ ] | - | - |
