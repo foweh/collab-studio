@@ -926,9 +926,33 @@ app.get('/storyboard/*', (req, res) => {
 });
 
 // ─── 音乐搜索代理（解决浏览器 CORS 限制） ────────────────
+// 安全加固：仅允许代理白名单域名，防止 SSRF（内网探测/任意 URL 请求）
+const PROXY_ALLOWED_HOSTS = [
+  'songsearch.kugou.com',       // 酷狗搜索
+  'u.y.qq.com',                 // QQ 音乐
+  'lxmusicapi.onrender.com',    // lx-music-api
+];
+const PROXY_ALLOWED_SUFFIXES = ['.qq.com', '.kugou.com', '.onrender.com'];
+
+function isProxyHostAllowed(host) {
+  if (!host) return false;
+  const h = host.toLowerCase();
+  if (PROXY_ALLOWED_HOSTS.includes(h)) return true;
+  return PROXY_ALLOWED_SUFFIXES.some(s => h.endsWith(s));
+}
+
 function httpJSON(url, opts = {}) {
   return new Promise((resolve, reject) => {
-    const parsed = new URL(url);
+    let parsed;
+    try { parsed = new URL(url); }
+    catch (e) { return reject(new Error(`Invalid URL: ${url}`)); }
+    if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
+      return reject(new Error(`不支持的协议: ${parsed.protocol}`));
+    }
+    // SSRF 防护：只允许白名单域名
+    if (!isProxyHostAllowed(parsed.hostname)) {
+      return reject(new Error(`目标域名不在白名单: ${parsed.hostname}`));
+    }
     const mod = parsed.protocol === 'https:' ? https : http;
     const req = mod.request(url, opts, (resp) => {
       let body = '';
