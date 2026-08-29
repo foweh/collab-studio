@@ -985,8 +985,8 @@ function sanitizeString(v, maxLen = MAX_STR_LEN) {
 }
 
 function validateEventPayload(eventName, data) {
-  // 特殊处理：project-delete 支持字符串ID格式
-  if (eventName === 'project-delete' && typeof data === 'string') {
+  // 特殊处理：project-delete / project-restore / project-permanent-delete 支持字符串ID格式
+  if (['project-delete', 'project-restore', 'project-permanent-delete'].includes(eventName) && typeof data === 'string') {
     return { valid: validateId(data) };
   }
   
@@ -1441,8 +1441,13 @@ io.on('connection', (socket) => {
     projectSvc.saveProjects();
   });
   socket.on('project-restore', (id) => {
+    if (!validateEventPayload('project-restore', id).valid) return;
     const p = projects.find(x => x.id === id);
     if (!p) return;
+    if (!projectSvc.canDeleteProject(socket.userName, p, auth)) {
+      socket.emit('project-update-error', '你没有恢复此项目的权限');
+      return;
+    }
     p.deleted = false; delete p.deletedAt;
     socket.emit('project-restored', id);
     addLog(socket.id, socket.userName || SERVER_NAME, 'restored', p.type, p.name);

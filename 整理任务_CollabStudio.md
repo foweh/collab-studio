@@ -38,12 +38,12 @@ Collab Studio 是一个"创作协作全家桶":剧本/故事/导图/分镜实时
 - 备注:顺带发现 `project-create` 硬编码 `visibility:'private'`,传入的 visibility 被忽略(记录待后续处理)
 
 ### P0-2:`project-restore` 补权限校验
-- 状态:[ ]
+- 状态:[x]
 - 问题:恢复项目无权限校验,任意登录用户可恢复他人已删除项目(delete 有校验而 restore 没有)
 - 涉及文件:`server.js`(project-restore handler,约 1443 行)
-- 修复:与 `project-delete` 对齐,加 `canDeleteProject(socket.userName, p, auth)` 校验
+- 修复:与 `project-delete` 对齐,加 `canDeleteProject(socket.userName, p, auth)` 校验;`validateEventPayload` 补充字符串 ID 支持
 - 预期结果:非 owner/admin 无法恢复他人项目
-- 验收:非 owner socket 触发 restore 返回权限错误
+- 验收:非 owner socket 触发 restore 返回权限错误(✅ 冒烟测试:bob 被拒 / alice 成功)
 
 ### P0-3:`chat-get-history` 补权限校验
 - 状态:[ ]
@@ -164,7 +164,7 @@ Collab Studio 是一个"创作协作全家桶":剧本/故事/导图/分镜实时
 | 编号 | 状态 | Commit | 说明 |
 |------|------|--------|------|
 | P0-1 | [x] | - | - |
-| P0-2 | [ ] | - | - |
+| P0-2 | [x] | - | - |
 | P0-3 | [ ] | - | - |
 | P0-4 | [ ] | - | - |
 | P1-5 | [ ] | - | - |
