@@ -1841,7 +1841,16 @@ io.on('connection', (socket) => {
   // ── 私聊：获取历史 ──
   socket.on('chat-get-history', ({ with: targetName }) => {
     if (!socket.userName || !targetName) return;
+    if (!validateString(targetName, MAX_NAME_LEN)) return;
     const key = getChatKey(socket.userName, targetName);
+    // 权限校验：请求者必须是对话参与者之一
+    // getChatKey 用 ':' 拼接用户名。若用户名含 ':'（历史遗留，未在校验中排除），
+    // 可能与其他用户名组合产生 key 碰撞 → 读到他人私聊。此处保守拒绝非常规 key。
+    const parts = key.split(':');
+    if (parts.length !== 2 || !parts.includes(socket.userName)) {
+      socket.emit('chat-history', { with: targetName, messages: [] });
+      return;
+    }
     const messages = chatHistory[key] || [];
     socket.emit('chat-history', { with: targetName, messages });
   });
