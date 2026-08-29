@@ -138,7 +138,9 @@ function startFlaskServer() {
     return;
   }
   console.log('[场景检测] 启动 Flask 服务...');
-  flaskProcess = spawn('python', ['server.py'], {
+  // 兼容 Ubuntu(默认无 python 别名): python → python3 回退
+  const pyCmd = process.env.PYTHON_CMD || (process.platform === 'win32' ? 'python' : (fs.existsSync('/usr/bin/python3') ? 'python3' : 'python'));
+  flaskProcess = spawn(pyCmd, ['server.py'], {
     cwd: SCENEDETECT_DIR,
     stdio: ['ignore', 'pipe', 'pipe'],
     env: { ...process.env, SCENEDETECT_PORT: String(SCENEDETECT_PORT) },
