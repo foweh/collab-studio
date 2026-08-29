@@ -146,10 +146,14 @@
     }).join('');
 
     // 操作按钮(保存/导出/返回)
+    const statBtn = (['article', 'audio-project'].includes(cur.type))
+      ? `<button class="toolbar-btn" onclick="window.deptViews.showStats()" style="font-size:13px">📊 字数/时长</button>`
+      : '';
     const actionsHtml = `
       <button class="toolbar-btn primary" onclick="window.deptViews.save()" style="font-size:13px">💾 保存</button>
       <button class="toolbar-btn" onclick="window.deptViews.exportHtml()" style="font-size:13px">⬇️ 导出 HTML</button>
       <button class="toolbar-btn" onclick="window.deptViews.exportMd()" style="font-size:13px">⬇️ 导出 MD</button>
+      ${statBtn}
       <button class="toolbar-btn" onclick="window.deptViews.goBack()" style="font-size:13px">← 返回</button>
     `;
 
@@ -274,6 +278,23 @@
     }).catch(e => { if (status) status.textContent = ''; alert('❌ ' + e.message); });
   }
 
+  // ─── 字数/时长统计(推文/音频稿件) ─────────────────
+  function showStats() {
+    const tc = TYPES[cur.type] || TYPES.fallback;
+    const d = cur.data || {};
+    let text = '';
+    tc.fields.forEach(f => {
+      const el = document.getElementById('dept-f-' + f.key);
+      const v = (el ? el.value : '') || d[f.key] || '';
+      text += ' ' + v;
+    });
+    const chars = text.replace(/\s/g, '').length;         // 去空白后的字数
+    const cjkChars = (text.match(/[\u4e00-\u9fff]/g) || []).length; // 汉字数
+    const minutes = chars / 200;                           // 按 200字/分钟 朗读
+    const m = Math.floor(minutes), s = Math.round((minutes - m) * 60);
+    showToast(`📊 字数: ${chars} 字(汉字 ${cjkChars})\n🕐 朗读约 ${m} 分 ${s} 秒(按 200字/分)`);
+  }
+
   // ─── 返回 ───────────────────────────────────────────
   function goBack() {
     if (window.CollabStudio.socket && cur) {
@@ -285,7 +306,7 @@
 
   // ─── 状态机事件监听 ─────────────────────────────────
   window.deptViews = {
-    open: openDeptProject, save, exportHtml, exportMd, aiAction, goBack,
+    open: openDeptProject, save, exportHtml, exportMd, aiAction, goBack, showStats,
     _cur: () => cur,
   };
 

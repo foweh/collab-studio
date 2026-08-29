@@ -29,11 +29,16 @@
     "bcryptjs": "^3.0.3",
     "express": "^4.18.2",
     "helmet": "^8.2.0",
+    "jspdf": "^4.2.1",
+    "jszip": "^3.10.1",
+    "mammoth": "^1.12.2",
+    "marked": "^18.0.11",
     "multer": "^2.3.0",
     "qrcode": "^1.5.4",
     "socket.io": "^4.7.2",
     "socket.io-client": "^4.8.3",
-    "uuid": "^9.0.0"
+    "uuid": "^9.0.0",
+    "xlsx": "^0.18.5"
   },
   "devDependencies": {
     "@yao-pkg/pkg": "^6.21.0"

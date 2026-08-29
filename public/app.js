@@ -1324,7 +1324,17 @@ function renderStats() {
         <div style="font-size:24px">${c.icon}</div>
         <div style="font-size:28px;font-weight:700;color:${c.color};margin:6px 0">${c.value}</div>
         <div style="font-size:12px;color:var(--text-dim)">${c.label}</div>
-      </div>`).join('') + '</div>';
+      </div>`).join('') + '</div>'
+      + '<div style="margin-top:14px"><button class="toolbar-btn" onclick="window.exportStatsCSV()" style="font-size:12px">⬇️ 导出数据报表(CSV)</button></div>';
+    // CSV 导出
+    window.exportStatsCSV = () => {
+      const rows = [['指标', '数值'], ...cards.map(c => [c.label, c.value])];
+      const csv = '\ufeff' + rows.map(r => r.join(',')).join('\n');
+      const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' });
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(blob); a.download = '数据报表-' + new Date().toISOString().slice(0, 10) + '.csv';
+      a.click();
+    };
   }).catch(e => { content.innerHTML = '<div style="color:#ef4444">加载失败: ' + e.message + '</div>'; });
 }
 
@@ -1970,6 +1980,10 @@ function switchModule(moduleName) {
     socket.emit('admin-list-resets');
     socket.emit('admin-list-msg-requests');
     renderDeptAdmin(); // 部门管理(部门化改造)
+  }
+  // 工具集(阶段四)
+  if (moduleName === 'tools') {
+    if (window.ToolsModule) window.ToolsModule.render();
   }
   // 获取群列表（消息面板和管理面板都加载）
   if (moduleName === 'messages' || moduleName === 'admin') {
