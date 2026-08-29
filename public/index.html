@@ -28,8 +28,6 @@
         </div>
         <button class="toolbar-btn" id="refresh-lan-btn" title="刷新发现">🔄 <span data-i18n="refreshLan">搜索设备</span></button>
         <button class="toolbar-btn" id="qr-btn" title="手机扫码访问" style="font-size:16px">📱</button>
-        <button class="toolbar-btn" id="lang-toggle-btn" title="中/EN" style="font-size:13px">🇨🇳 中文</button>
-        <button class="toolbar-btn" id="admin-login-btn" title="管理员登录" style="font-size:13px;padding:5px 8px">👑</button>
         <span id="dept-badge" style="display:none;font-size:12px;padding:4px 10px;border-radius:20px;background:var(--accent);color:#fff;margin-left:6px;white-space:nowrap"></span>
         <img id="user-avatar" src="/default-avatar.png" title="用户头像" style="width:32px;height:32px;border-radius:50%;object-fit:cover;cursor:pointer;border:2px solid var(--border);margin-left:6px">
       </div>
@@ -210,9 +208,6 @@
         <section id="panel-activity" class="module-panel">
           <div class="panel-header">
             <h2>📋 操作日志</h2>
-            <div class="panel-actions">
-              <button class="toolbar-btn" id="log-clear-btn">🗑️ 清空</button>
-            </div>
           </div>
           <div id="activity-log" class="module-body"></div>
         </section>
@@ -283,11 +278,6 @@
           <div class="panel-header">
             <h2 id="project-detail-title">📂 项目详情</h2>
             <div class="panel-actions">
-              <button class="toolbar-btn" id="pd-add-script">📜 剧本</button>
-              <button class="toolbar-btn" id="pd-add-mindmap">🧠 导图</button>
-              <button class="toolbar-btn" id="pd-add-story">📖 故事</button>
-              <button class="toolbar-btn" id="pd-add-storyboard">🎬 分镜</button>
-              <button class="toolbar-btn" id="pd-add-custom">➕ 其他</button>
               <span style="width:1px;height:20px;background:var(--border);margin:0 4px;display:inline-block"></span>
               <button class="toolbar-btn" id="pd-back">← 返回项目列表</button>
             </div>
@@ -544,71 +534,6 @@
     </div>
   </div>
 
-  <!-- ─── 自定义 alert 弹窗 ─── -->
-  <div id="alert-modal" class="modal-overlay" style="display:none">
-    <div class="alert-card">
-      <div class="alert-icon" id="alert-icon">ℹ️</div>
-      <div class="alert-title" id="alert-title">提示</div>
-      <div class="alert-text" id="alert-text"></div>
-      <button class="alert-btn" id="alert-ok">知道了</button>
-    </div>
-  </div>
-
-  <!-- ─── 自定义 confirm 弹窗 ─── -->
-  <div id="confirm-modal" class="modal-overlay" style="display:none">
-    <div class="alert-card">
-      <div class="alert-icon" id="confirm-icon">❓</div>
-      <div class="alert-title" id="confirm-title">确认操作</div>
-      <div class="alert-text" id="confirm-text"></div>
-      <div class="confirm-actions">
-        <button class="confirm-btn cancel" id="confirm-cancel">取消</button>
-        <button class="confirm-btn ok" id="confirm-ok">确认</button>
-      </div>
-    </div>
-  </div>
-
-  <!-- ─── 新建项目通用弹窗 ─── -->
-  <div id="create-modal" class="modal-overlay" style="display:none">
-    <div class="create-card">
-      <div class="create-header">
-        <span class="create-icon" id="create-icon">📄</span>
-        <span class="create-title" id="create-title">新建项目</span>
-        <button class="create-close" id="create-close">✕</button>
-      </div>
-      <div class="create-body">
-        <label class="create-label">项目名称</label>
-        <input type="text" id="create-input" class="create-input" placeholder="输入项目名称..." maxlength="20" autofocus>
-        <p class="create-hint" id="create-hint">输入项目名称后点击确认。</p>
-      </div>
-      <div class="create-actions">
-        <button class="create-btn cancel" id="create-cancel">取消</button>
-        <button class="create-btn confirm" id="create-confirm">创建</button>
-      </div>
-    </div>
-  </div>
-
-  <!-- ─── 批注创建弹窗 ─── -->
-  <div id="annotation-create-modal" class="modal-overlay" style="display:none">
-    <div class="create-card" style="max-width:400px">
-      <div class="create-header">
-        <span class="create-icon">💬</span>
-        <span class="create-title">添加批注</span>
-        <button class="create-close" id="ann-create-close">✕</button>
-      </div>
-      <div class="create-body">
-        <label class="create-label">引用文本</label>
-        <div id="ann-selected-text" style="padding:6px 8px;background:var(--surface2);border-radius:4px;font-size:12px;color:var(--text-dim);margin-bottom:10px;word-break:break-word;max-height:60px;overflow-y:auto"></div>
-        <label class="create-label">批注内容</label>
-        <textarea id="ann-create-input" class="create-input" style="min-height:80px;resize:vertical;font-family:inherit" placeholder="输入你的建议、问题或评论..." maxlength="1000"></textarea>
-        <p class="create-hint" id="ann-create-hint">写下对这段内容的修改建议或问题。</p>
-      </div>
-      <div class="create-actions">
-        <button class="create-btn cancel" id="ann-create-cancel">取消</button>
-        <button class="create-btn confirm" id="ann-create-confirm">提交批注</button>
-      </div>
-    </div>
-  </div>
-
   <div id="chat-modal" style="display:none">
     <div class="chat-modal">
       <div class="chat-modal-header">
@@ -619,25 +544,6 @@
       <div class="chat-input-area">
         <input type="text" class="chat-input" id="chat-input" placeholder="输入消息..." maxlength="500">
         <button class="chat-send-btn" id="chat-send-btn">发送</button>
-      </div>
-    </div>
-  </div>
-
-  <!-- ─── 管理员密码输入弹窗（用于自动登录失败时） ─── -->
-  <div id="admin-pwd-modal" class="modal-overlay" style="display:none">
-    <div class="create-card" style="max-width:340px">
-      <div class="create-header">
-        <span class="create-icon">👑</span>
-        <span class="create-title">管理员验证</span>
-      </div>
-      <div class="create-body">
-        <p style="font-size:13px;color:var(--text-dim);margin-bottom:10px">请输入管理员密码以继续</p>
-        <input type="password" id="admin-pwd-input" class="create-input" placeholder="输入管理员密码..." maxlength="50" autofocus style="width:100%;padding:8px 12px;box-sizing:border-box" />
-        <div id="admin-pwd-error" style="font-size:12px;color:var(--danger);margin-top:6px;display:none"></div>
-      </div>
-      <div class="create-actions">
-        <button class="create-btn cancel" id="admin-pwd-cancel">退出</button>
-        <button class="create-btn confirm" id="admin-pwd-confirm">确认</button>
       </div>
     </div>
   </div>
