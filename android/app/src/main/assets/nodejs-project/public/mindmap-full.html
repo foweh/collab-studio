@@ -1,0 +1,180 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>思维导图 - 全屏</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      background: #0d0d1a;
+      color: #e0e0f0;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", sans-serif;
+      height: 100vh; overflow: hidden;
+    }
+    #mm-fullscreen {
+      display: flex; flex-direction: column; height: 100vh;
+    }
+    #mm-full-toolbar {
+      display: flex; align-items: center; gap: 8px;
+      padding: 6px 16px;
+      background: #16162b;
+      border-bottom: 1px solid #333366;
+      flex-shrink: 0;
+    }
+    #mm-full-title {
+      font-size: 15px; font-weight: 600; flex: 1;
+    }
+    #mm-full-canvas {
+      flex: 1; cursor: grab; background: #0d0d1a;
+    }
+    #mm-full-canvas:active { cursor: grabbing; }
+    .tool-btn {
+      padding: 4px 10px; border: 1px solid #333366; border-radius: 4px;
+      background: #1e1e3a; color: #e0e0f0; cursor: pointer; font-size: 12px;
+    }
+    .tool-btn:hover { background: #2a2a4e; }
+    .tool-btn.danger:hover { background: #ff5252; color: #fff; }
+    #mm-full-color { width: 24px; height: 24px; border: none; border-radius: 4px; cursor: pointer; padding: 0; }
+    #mm-full-toast {
+      position: fixed; bottom: 30px; left: 50%; transform: translateX(-50%);
+      background: #3a1b1b; color: #ff5252; padding: 8px 16px; border-radius: 8px;
+      font-size: 13px; z-index: 999; border: 1px solid #ff5252;
+      transition: opacity 0.3s; opacity: 0; pointer-events: none;
+    }
+
+  </style>
+</head>
+<body>
+  <div id="mm-fullscreen">
+    <div id="mm-full-toolbar">
+      <span id="mm-full-title">🧠 思维导图</span>
+      <button class="tool-btn" id="mm-add-root-f">➕ 根</button>
+      <button class="tool-btn" id="mm-add-child-f">👶 子节点</button>
+      <button class="tool-btn" id="mm-add-sibling-f">↔️ 同级</button>
+      <button class="tool-btn danger" id="mm-del-node-f">🗑️ 删除</button>
+      <button class="tool-btn" id="mm-fit-f">⊞ 适应</button>
+      <button class="tool-btn" id="mm-zoomin-f">🔍+</button>
+      <button class="tool-btn" id="mm-zoomout-f">🔍-</button>
+      <input type="color" id="mm-full-color" value="#4fc3f7">
+      <span id="mm-zoom-level" style="font-size:12px;color:#8888bb">100%</span>
+    </div>
+    <canvas id="mm-full-canvas"></canvas>
+  </div>
+  <div id="mm-full-toast"></div>
+
+  <script src="/socket.io/socket.io.js"></script>
+  <script>
+    // 解析 URL 参数获取 project ID
+    const params = new URLSearchParams(window.location.search);
+    const projectId = params.get('project');
+    // 页面标题
+    document.title = projectId ? `导图 - ${projectId}` : '思维导图 - 全屏';
+
+    // 这个全屏页面会通过 postMessage 与主窗口通信，
+    // 或者直接通过 Socket.IO 连接获取项目数据
+    // 简单起见：使用 iframe 方式或直接独立 socket 连接
+
+    // 直接使用 Socket.IO 连接（独立连接，不依赖 opener）
+    const socket = io();
+    let myName = localStorage.getItem('mm-full-name') || '全屏用户';
+    let projectData = null;
+    let serverId = '';
+
+    socket.emit('join', myName);
+
+    // 获取项目列表，找到目标项目
+    socket.on('init', (data) => {
+      serverId = data.serverId;
+      if (projectId) {
+        const p = data.projects.find(x => x.id === projectId);
+        if (p) openProject(p);
+      } else if (data.projects.length > 0) {
+        const mm = data.projects.find(x => x.type === 'mindmap');
+        openProject(mm || data.projects[0]);
+      }
+    });
+
+    socket.on('mindmap-updated', (data) => {
+      if (projectData && projectData.id === data.id) {
+        projectData.data = data.data;
+        if (window.loadMindMapData) window.loadMindMapData(data.data);
+      }
+    });
+
+    // bridge-message for realtime sync
+    socket.on('bridge-message', (msg) => {
+      if (msg.type === 'realtime' && msg.event === 'mindmap-updated' && projectData && projectData.id === msg.data.id) {
+        projectData.data = msg.data.data;
+        if (window.loadMindMapData) window.loadMindMapData(msg.data.data);
+      }
+    });
+
+    function openProject(p) {
+      if (!p || p.type !== 'mindmap') return;
+      projectData = p;
+      document.getElementById('mm-full-title').textContent = `🧠 ${p.name}`;
+      // 重新利用 mindmap.js 的渲染引擎
+      if (window.openMindMapEditor) {
+        window.openMindMapEditor(p);
+      }
+    }
+
+    // 监听项目更新
+    socket.on('project-updated', (data) => {
+      if (projectData && projectData.id === data.id) {
+        projectData.data = data.data;
+        if (window.loadMindMapData) window.loadMindMapData(data.data);
+      }
+    });
+  </script>
+  <script src="/mindmap.js"></script>
+  <script>
+    // 覆盖 canvas ID 以指向全屏 canvas
+    // mindmap.js 使用 document.getElementById('mindmap-canvas')
+    // 所以我们把全屏 canvas 的 id 也设为 mindmap-canvas
+    document.getElementById('mm-full-canvas').id = 'mindmap-canvas';
+
+    // 覆盖 resize 函数
+    window.mmResize = function() {
+      const canvas = document.getElementById('mindmap-canvas');
+      const parent = canvas.parentElement;
+      canvas.width = parent.clientWidth;
+      canvas.height = parent.clientHeight;
+      if (window.renderMindMap) window.renderMindMap();
+      else if (window.render) window.render();
+    };
+
+    // 按钮绑定
+    document.getElementById('mm-add-root-f').addEventListener('click', () => {
+      const btn = document.getElementById('mm-add-root');
+      if (btn) btn.click();
+    });
+    document.getElementById('mm-add-child-f').addEventListener('click', () => {
+      const btn = document.getElementById('mm-add-child');
+      if (btn) btn.click();
+    });
+    document.getElementById('mm-add-sibling-f').addEventListener('click', () => {
+      const btn = document.getElementById('mm-add-sibling');
+      if (btn) btn.click();
+    });
+    document.getElementById('mm-del-node-f').addEventListener('click', () => {
+      const btn = document.getElementById('mm-delete-node');
+      if (btn) btn.click();
+    });
+    document.getElementById('mm-fit-f').addEventListener('click', () => {
+      if (window.fitToScreen) window.fitToScreen();
+    });
+    document.getElementById('mm-zoomin-f').addEventListener('click', () => {
+      if (window.zoomIn) window.zoomIn();
+    });
+    document.getElementById('mm-zoomout-f').addEventListener('click', () => {
+      if (window.zoomOut) window.zoomOut();
+    });
+
+    // 加载后调整尺寸
+    setTimeout(() => { if (window.mmResize) window.mmResize(); }, 200);
+    window.addEventListener('resize', () => { if (window.mmResize) window.mmResize(); });
+  </script>
+</body>
+</html>

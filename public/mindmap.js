@@ -2214,4 +2214,280 @@ window.registerCollabModule && window.registerCollabModule('mindmap', {
   setData: (data) => { if (currentProject) { currentProject.data = data; render(); } },
 });
 
+// ─── AI 功能 ────────────────────────────────────────────
+const aiSidebar = document.getElementById('mm-ai-sidebar');
+const aiTitle = document.getElementById('mm-ai-title');
+const aiContent = document.getElementById('mm-ai-content');
+let aiChatHistory = [];
+
+function openAiSidebar(title, builder) {
+  aiTitle.textContent = title;
+  aiContent.innerHTML = '';
+  builder(aiContent);
+  aiSidebar.style.display = 'flex';
+}
+
+function closeAiSidebar() {
+  aiSidebar.style.display = 'none';
+}
+
+document.getElementById('mm-ai-close').addEventListener('click', closeAiSidebar);
+
+// 序列化当前导图为树结构（给 AI 用）
+function serializeMindmap() {
+  const roots = getRootIds();
+  function buildTree(nodeId) {
+    const node = nodes.find(n => n.id === nodeId);
+    if (!node) return null;
+    const children = getChildren(nodeId).map(c => buildTree(c.id)).filter(Boolean);
+    return { id: node.id, text: node.text, children };
+  }
+  return roots.map(r => buildTree(r)).filter(Boolean);
+}
+
+// ── AI 生成 ──
+document.getElementById('mm-ai-generate').addEventListener('click', () => {
+  openAiSidebar('🤖 AI 生成思维导图', (panel) => {
+    panel.innerHTML = `
+      <div style="margin-bottom:12px">
+        <label style="font-size:13px;color:var(--text-secondary);display:block;margin-bottom:6px">输入主题，AI 自动生成完整思维导图</label>
+        <input type="text" id="ai-gen-topic" placeholder="例如：短视频运营策略" style="width:100%;padding:8px 12px;border:1px solid var(--border);border-radius:6px;background:var(--surface2);color:var(--text);font-size:13px;outline:none;box-sizing:border-box">
+      </div>
+      <button id="ai-gen-btn" style="width:100%;padding:10px;border:none;border-radius:6px;background:#3b82f6;color:#fff;font-size:14px;cursor:pointer">生成思维导图</button>
+      <div id="ai-gen-status" style="margin-top:12px;font-size:12px;color:var(--text-dim)"></div>
+    `;
+    const btn = panel.querySelector('#ai-gen-btn');
+    const topicInput = panel.querySelector('#ai-gen-topic');
+    const status = panel.querySelector('#ai-gen-status');
+
+    const doGenerate = async () => {
+      const topic = topicInput.value.trim();
+      if (!topic) { topicInput.focus(); return; }
+      btn.disabled = true; btn.textContent = '生成中...';
+      status.textContent = '🤖 AI 正在生成思维导图，请稍候...';
+      try {
+        const resp = await fetch('/api/ai/mindmap/generate', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ topic })
+        });
+        const data = await resp.json();
+        if (data.error) throw new Error(data.error);
+        // 清空当前画布并导入 AI 生成的数据
+        pushUndo();
+        nodes = []; edges = []; nodeCounter = 0;
+        importAiTree(data, null);
+        autoLayout(); render(); saveData();
+        status.innerHTML = '<span style="color:#10b981">✅ 生成成功！共 ' + nodes.length + ' 个节点</span>';
+      } catch (e) {
+        status.innerHTML = '<span style="color:#ef4444">❌ ' + esc(e.message) + '</span>';
+      } finally {
+        btn.disabled = false; btn.textContent = '生成思维导图';
+      }
+    };
+    btn.addEventListener('click', doGenerate);
+    topicInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') doGenerate(); });
+    topicInput.focus();
+  });
+});
+
+// 递归导入 AI 生成的树结构
+function importAiTree(node, parentId) {
+  if (!node) return;
+  const text = node.root || node.text || '节点';
+  const id = addNodeInternal(text, COLORS[nodeCounter % COLORS.length]);
+  if (parentId) edges.push({ from: parentId, to: id });
+  const children = node.children || [];
+  children.forEach(child => importAiTree(child, id));
+}
+
+// ── AI 展开 ──
+document.getElementById('mm-ai-expand').addEventListener('click', () => {
+  const selected = getSelectedNode();
+  if (!selected) {
+    alert('请先选中一个节点');
+    return;
+  }
+  openAiSidebar('🌱 AI 展开节点', async (panel) => {
+    panel.innerHTML = '<div style="text-align:center;padding:20px;color:var(--text-dim)">🤖 AI 正在展开「' + esc(selected.text) + '」...</div>';
+    try {
+      // 构建上下文
+      const parentIds = getParentIds(selected.id);
+      const parent = parentIds.length > 0 ? nodes.find(n => n.id === parentIds[0]) : null;
+      const siblings = parent ? getChildren(parent.id).filter(c => c.id !== selected.id).map(c => c.text) : [];
+      const children = getChildren(selected.id).map(c => c.text);
+      let context = `当前节点：${selected.text}\n`;
+      if (parent) context += `父节点：${parent.text}\n`;
+      if (siblings.length) context += `兄弟节点：${siblings.join(', ')}\n`;
+      if (children.length) context += `已有子节点：${children.join(', ')}\n`;
+
+      const resp = await fetch('/api/ai/mindmap/expand', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ nodeText: selected.text, context })
+      });
+      const data = await resp.json();
+      if (data.error) throw new Error(data.error);
+
+      pushUndo();
+      const newChildren = data.children || [];
+      newChildren.forEach(child => {
+        const id = addNodeInternal(child.text, COLORS[nodeCounter % COLORS.length]);
+        edges.push({ from: selected.id, to: id });
+      });
+      autoLayout(); render(); saveData();
+      panel.innerHTML = '<div style="text-align:center;padding:20px;color:#10b981">✅ 已添加 ' + newChildren.length + ' 个子节点</div>';
+      setTimeout(closeAiSidebar, 1500);
+    } catch (e) {
+      panel.innerHTML = '<div style="text-align:center;padding:20px;color:#ef4444">❌ ' + esc(e.message) + '</div>';
+    }
+  });
+});
+
+// ── AI 聊天 ──
+document.getElementById('mm-ai-chat').addEventListener('click', () => {
+  openAiSidebar('💬 AI 聊天', (panel) => {
+    panel.innerHTML = `
+      <div id="ai-chat-messages" style="display:flex;flex-direction:column;gap:8px;margin-bottom:12px;min-height:200px"></div>
+      <div style="display:flex;gap:8px">
+        <input type="text" id="ai-chat-input" placeholder="输入消息..." style="flex:1;padding:8px 12px;border:1px solid var(--border);border-radius:6px;background:var(--surface2);color:var(--text);font-size:13px;outline:none">
+        <button id="ai-chat-send" style="padding:8px 16px;border:none;border-radius:6px;background:#07c160;color:#fff;font-size:13px;cursor:pointer">发送</button>
+      </div>
+      <div id="ai-chat-status" style="margin-top:8px;font-size:12px;color:var(--text-dim)"></div>
+    `;
+    const msgBox = panel.querySelector('#ai-chat-messages');
+    const input = panel.querySelector('#ai-chat-input');
+    const sendBtn = panel.querySelector('#ai-chat-send');
+    const status = panel.querySelector('#ai-chat-status');
+
+    function addMsg(role, text) {
+      const div = document.createElement('div');
+      div.style.cssText = 'padding:8px 12px;border-radius:8px;font-size:13px;max-width:90%;word-break:break-word;' +
+        (role === 'user' ? 'background:#3b82f6;color:#fff;align-self:flex-end' : 'background:var(--surface2);color:var(--text);align-self:flex-start');
+      div.textContent = text;
+      msgBox.appendChild(div);
+      msgBox.scrollTop = msgBox.scrollHeight;
+    }
+
+    addMsg('ai', '你好！我是你的思维导图 AI 助手。告诉我你想做什么，比如"加一个关于拍摄的分支""把第二个节点改名为后期制作"等。');
+
+    const doSend = async () => {
+      const msg = input.value.trim();
+      if (!msg) return;
+      addMsg('user', msg);
+      input.value = '';
+      sendBtn.disabled = true;
+      status.textContent = '🤔 AI 思考中...';
+      try {
+        const mindmap = serializeMindmap();
+        const resp = await fetch('/api/ai/mindmap/chat', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ message: msg, mindmap, history: aiChatHistory })
+        });
+        const data = await resp.json();
+        if (data.error) throw new Error(data.error);
+
+        // 记录对话历史
+        aiChatHistory.push([msg, JSON.stringify(data)]);
+        if (aiChatHistory.length > 10) aiChatHistory.shift();
+
+        // 显示回复
+        addMsg('ai', data.reply || '(空回复)');
+
+        // 执行操作
+        const actions = data.actions || [];
+        if (actions.length > 0) {
+          pushUndo();
+          let actionCount = 0;
+          actions.forEach(action => {
+            if (executeAiAction(action)) actionCount++;
+          });
+          autoLayout(); render(); saveData();
+          if (actionCount > 0) {
+            status.textContent = '✅ 执行了 ' + actionCount + ' 个操作';
+          } else {
+            status.textContent = '';
+          }
+        } else {
+          status.textContent = '';
+        }
+      } catch (e) {
+        addMsg('ai', '❌ 出错了：' + e.message);
+        status.textContent = '';
+      } finally {
+        sendBtn.disabled = false;
+        input.focus();
+      }
+    };
+    sendBtn.addEventListener('click', doSend);
+    input.addEventListener('keydown', (e) => { if (e.key === 'Enter') doSend(); });
+    input.focus();
+  });
+});
+
+// 执行 AI 返回的操作
+function executeAiAction(action) {
+  if (!action || !action.type) return false;
+  switch (action.type) {
+    case 'add_child': {
+      const parent = nodes.find(n => String(n.id) === String(action.parent_id));
+      if (!parent) return false;
+      const id = addNodeInternal(action.text || '新节点', COLORS[nodeCounter % COLORS.length]);
+      edges.push({ from: parent.id, to: id });
+      return true;
+    }
+    case 'add_sibling': {
+      const ref = nodes.find(n => String(n.id) === String(action.node_id));
+      if (!ref) return false;
+      const parentIds = getParentIds(ref.id);
+      const id = addNodeInternal(action.text || '新节点', COLORS[nodeCounter % COLORS.length]);
+      if (parentIds.length > 0) {
+        edges.push({ from: parentIds[0], to: id });
+      } else {
+        // 无父节点，作为新根
+      }
+      return true;
+    }
+    case 'edit': {
+      const node = nodes.find(n => String(n.id) === String(action.node_id));
+      if (!node) return false;
+      node.text = action.text || node.text;
+      node.textWidth = measureText(node.text);
+      node.width = Math.max(NODE_MIN_W, node.textWidth + NODE_PAD * 2);
+      return true;
+    }
+    case 'delete': {
+      const nodeId = action.node_id;
+      const descendants = collectDescendants(nodeId);
+      nodes = nodes.filter(n => !descendants.has(n.id));
+      edges = edges.filter(e => !descendants.has(e.from) && !descendants.has(e.to));
+      selectedIds.clear();
+      return true;
+    }
+    case 'set_color': {
+      const node = nodes.find(n => String(n.id) === String(action.node_id));
+      if (!node) return false;
+      node.color = action.color || node.color;
+      return true;
+    }
+    case 'connect': {
+      const from = nodes.find(n => String(n.id) === String(action.from_id));
+      const to = nodes.find(n => String(n.id) === String(action.to_id));
+      if (!from || !to) return false;
+      // 避免重复连线
+      if (!edges.some(e => e.from === from.id && e.to === to.id)) {
+        edges.push({ from: from.id, to: to.id });
+      }
+      return true;
+    }
+    case 'expand': {
+      // AI 展开是异步的，这里只标记，实际展开需要单独调用
+      return false;
+    }
+    default:
+      return false;
+  }
+}
+
+// 辅助：HTML 转义（esc 函数在 app.js 中定义，此处直接使用）
+
 })();
+

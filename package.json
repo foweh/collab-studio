@@ -18,7 +18,9 @@
   "bin": "server.js",
   "scripts": {
     "start": "node server.js",
-    "test": "node server.js --port 3001 --join localhost:3000"
+    "test": "node server.js --port 3001 --join localhost:3000",
+    "build": "npx pkg . --targets node20-win-x64 --output dist/CollabStudio/CollabStudio.exe",
+    "build:zip": "powershell Compress-Archive -Path dist/CollabStudio/* -DestinationPath dist/CollabStudio.zip -Force"
   },
   "engines": {
     "node": ">=18"
@@ -27,12 +29,23 @@
     "bcryptjs": "^3.0.3",
     "express": "^4.18.2",
     "helmet": "^8.2.0",
+    "qrcode": "^1.5.4",
     "socket.io": "^4.7.2",
     "socket.io-client": "^4.8.3",
-    "ssh2": "^1.17.0",
     "uuid": "^9.0.0"
   },
   "devDependencies": {
-    "@yao-pkg/pkg": "^6.19.0"
+    "@yao-pkg/pkg": "^6.21.0"
+  },
+  "pkg": {
+    "assets": [
+      "public/**/*",
+      "studio-vue/**/*",
+      "fenjing-local/**/*",
+      ".admin.env"
+    ],
+    "targets": [
+      "node20-win-x64"
+    ]
   }
 }

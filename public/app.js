@@ -56,6 +56,11 @@ const peerBadge       = $('#peer-badge');
 const lanCb           = $('#lan-toggle-cb');
 const lanStatus       = $('#lan-status');
 const refreshLanBtn   = $('#refresh-lan-btn');
+const qrBtn           = $('#qr-btn');
+const qrModal         = $('#qr-modal');
+const qrImageBox      = $('#qr-image-box');
+const qrUrlText       = $('#qr-url-text');
+const qrClose         = $('#qr-close');
 const navBtns         = $$('.nav-btn[data-module]');
 const panels          = $$('.module-panel');
 const projectList     = $('#project-list');
@@ -1682,8 +1687,8 @@ if (emptyTrashBtn) {
 function renderProjects() {
   projectList.innerHTML = '';
 
-  const currentFolderId = currentFolderPath.length > 0 
-    ? currentFolderPath[currentFolderPath.length - 1].id 
+  const currentFolderId = currentFolderPath.length > 0
+    ? currentFolderPath[currentFolderPath.length - 1].id
     : null;
 
   const breadcrumb = document.getElementById('breadcrumb');
@@ -1696,66 +1701,45 @@ function renderProjects() {
         <span class="crumb-item" data-index="${i}" style="cursor:pointer;color:var(--accent)">${esc(f.name)}</span>
       `).join('')}
     `;
-    
+
     // 在文件夹内添加创建按钮到面包屑导航
     if (!showingTrash && currentFolderId) {
       crumbsHtml += `
         <span style="flex:1"></span>
         <div class="create-buttons-inline">
-          <button class="create-btn" data-type="script" title="创建剧本">
-            <span class="create-icon">📜</span>
-            <span class="create-label">剧本</span>
-          </button>
-          <button class="create-btn" data-type="mindmap" title="创建思维导图">
-            <span class="create-icon">🧠</span>
-            <span class="create-label">导图</span>
-          </button>
-          <button class="create-btn" data-type="story" title="创建故事">
-            <span class="create-icon">📖</span>
-            <span class="create-label">故事</span>
-          </button>
-          <button class="create-btn" data-type="storyboard" title="创建分镜">
-            <span class="create-icon">🎬</span>
-            <span class="create-label">分镜</span>
-          </button>
-          <button class="create-btn" data-type="folder" title="创建子文件夹">
-            <span class="create-icon">📁</span>
-            <span class="create-label">文件夹</span>
-          </button>
+          <button class="create-btn" data-type="script" title="创建剧本"><span class="create-icon">📜</span><span class="create-label">剧本</span></button>
+          <button class="create-btn" data-type="mindmap" title="创建思维导图"><span class="create-icon">🧠</span><span class="create-label">导图</span></button>
+          <button class="create-btn" data-type="story" title="创建故事"><span class="create-icon">📖</span><span class="create-label">故事</span></button>
+          <button class="create-btn" data-type="storyboard" title="创建分镜"><span class="create-icon">🎬</span><span class="create-label">分镜</span></button>
+          <button class="create-btn" data-type="folder" title="创建子文件夹"><span class="create-icon">📁</span><span class="create-label">文件夹</span></button>
         </div>
       `;
     }
-    
+
     breadcrumb.innerHTML = crumbsHtml;
-    
+
     breadcrumb.querySelectorAll('.crumb-item').forEach((item, i) => {
       item.addEventListener('click', () => {
-        if (i === 0) {
-          currentFolderPath = [];
-        } else {
-          currentFolderPath = currentFolderPath.slice(0, i);
-        }
+        if (i === 0) currentFolderPath = [];
+        else currentFolderPath = currentFolderPath.slice(0, i);
         renderProjects();
       });
     });
-    
+
     // 创建按钮点击事件
     breadcrumb.querySelectorAll('.create-btn').forEach(btn => {
       btn.addEventListener('click', () => {
         const type = btn.dataset.type;
         const typeNames = { script: '剧本', mindmap: '思维导图', story: '故事', storyboard: '分镜', folder: '文件夹' };
         const typeIcons = { script: '📜', mindmap: '🧠', story: '📖', storyboard: '🎬', folder: '📁' };
-        
-        // 获取当前文件夹内的同类型项目名称
+
         const getExistingNames = () => {
-          const currentFolderId = currentFolderPath.length > 0 ? currentFolderPath[currentFolderPath.length - 1].id : null;
-          if (currentFolderId) {
-            return projects.filter(p => !p.deleted && p.parentId === currentFolderId && p.type === (type === 'storyboard' ? 'project' : type)).map(p => p.name);
-          } else {
-            return projects.filter(p => !p.deleted && !p.parentId && p.type === (type === 'storyboard' ? 'project' : type)).map(p => p.name);
-          }
+          const fid = currentFolderPath.length > 0 ? currentFolderPath[currentFolderPath.length - 1].id : null;
+          return projects
+            .filter(p => !p.deleted && p.parentId === fid && p.type === (type === 'storyboard' ? 'project' : type))
+            .map(p => p.name);
         };
-        
+
         const overlay = document.createElement('div');
         overlay.className = 'modal-overlay';
         overlay.innerHTML = `
@@ -1780,48 +1764,27 @@ function renderProjects() {
 
         const validateName = () => {
           const name = nameInput.value.trim();
-          if (!name) {
-            confirmBtn.disabled = true;
-            nameError.style.display = 'none';
-            return;
-          }
-          
-          const existingNames = getExistingNames();
-          if (existingNames.includes(name)) {
-            confirmBtn.disabled = true;
-            nameError.style.display = 'block';
-          } else {
-            confirmBtn.disabled = false;
-            nameError.style.display = 'none';
-          }
+          if (!name) { confirmBtn.disabled = true; nameError.style.display = 'none'; return; }
+          if (getExistingNames().includes(name)) { confirmBtn.disabled = true; nameError.style.display = 'block'; }
+          else { confirmBtn.disabled = false; nameError.style.display = 'none'; }
         };
 
         nameInput.addEventListener('input', validateName);
-
         nameInput.addEventListener('keydown', (e) => {
-          if (e.key === 'Enter' && !confirmBtn.disabled) {
-            confirmBtn.click();
-          } else if (e.key === 'Escape') {
-            overlay.remove();
-          }
+          if (e.key === 'Enter' && !confirmBtn.disabled) confirmBtn.click();
+          else if (e.key === 'Escape') overlay.remove();
         });
-
-        overlay.addEventListener('click', (e) => {
-          if (e.target === overlay) overlay.remove();
-        });
-
+        overlay.addEventListener('click', (e) => { if (e.target === overlay) overlay.remove(); });
         overlay.querySelector('#item-cancel').addEventListener('click', () => overlay.remove());
-
         confirmBtn.addEventListener('click', () => {
           const itemName = nameInput.value.trim() || '未命名';
           overlay.remove();
           const projectData = type === 'folder' ? { children: [] } : undefined;
-          const currentFolderId = currentFolderPath.length > 0 ? currentFolderPath[currentFolderPath.length - 1].id : null;
-          socket.emit('project-create', { 
-            type: type === 'storyboard' ? 'project' : type, 
-            name: itemName, 
+          socket.emit('project-create', {
+            type: type === 'storyboard' ? 'project' : type,
+            name: itemName,
             parentId: currentFolderId,
-            data: projectData 
+            data: projectData
           });
         });
       });
@@ -1833,12 +1796,10 @@ function renderProjects() {
   let visibleProjects;
   if (showingTrash) {
     visibleProjects = projects.filter(p => p.deleted);
+  } else if (currentFolderId) {
+    visibleProjects = projects.filter(p => !p.deleted && p.parentId === currentFolderId);
   } else {
-    if (currentFolderId) {
-      visibleProjects = projects.filter(p => !p.deleted && p.parentId === currentFolderId);
-    } else {
-      visibleProjects = projects.filter(p => !p.deleted && !p.parentId);
-    }
+    visibleProjects = projects.filter(p => !p.deleted && !p.parentId);
   }
 
   const canAccess = (p) => {
@@ -1852,173 +1813,172 @@ function renderProjects() {
   if (visibleProjects.length === 0) {
     projectList.innerHTML += showingTrash
       ? '<div class="editor-placeholder">回收站是空的</div>'
-      : currentFolderId 
+      : currentFolderId
         ? '<div class="editor-placeholder">文件夹是空的</div>'
         : '<div class="editor-placeholder">暂无项目，点击上方按钮创建</div>';
     return;
   }
 
-  const visIcons = { 'private': '🔒', 'public-read': '👁️', 'public-edit': '✏️' };
-  const visLabels = { 'private': '私密', 'public-read': '公开-只读', 'public-edit': '公开-可编辑' };
-
   if (!showingTrash) {
-    const folders = visibleProjects.filter(p => p.type === 'folder');
-    const items = visibleProjects.filter(p => p.type !== 'folder');
-    
-    folders.forEach(f => {
-      const vis = f.visibility || 'private';
-      const canChange = isAdmin || f.owner === myName;
-      const folderVisLabels = { 'private': '不让查看', 'public-read': '查看', 'public-edit': '编辑' };
-      const folderVisIcons = { 'private': '🔒', 'public-read': '👁️', 'public-edit': '✏️' };
-      const visOpts = ['private', 'public-read', 'public-edit'].map(v =>
-        `<option value="${v}"${vis === v ? ' selected' : ''}>${folderVisLabels[v]}</option>`
-      ).join('');
-      const card = document.createElement('div');
-      card.className = 'project-card folder';
-      const childCount = projects.filter(p => !p.deleted && p.parentId === f.id).length;
-      card.innerHTML = `
-        <span class="p-type">📁</span>
-        <button class="p-del" data-id="${f.id}">×</button>
-        <div class="p-name">${esc(cleanProjectName(f.name))}</div>
-        <div class="p-meta">文件夹 · ${childCount} 个项目 · ${timeAgo(f.updatedAt)}</div>
-        <div class="p-owner">${esc(f.owner || '我')}</div>
-        <div style="font-size:11px;color:var(--text-dim);margin-top:2px;display:flex;align-items:center;gap:4px">
-          <span title="${folderVisLabels[vis]}">${folderVisIcons[vis]}</span>
-          ${canChange ? `<select class="vis-select" data-id="${f.id}" style="padding:1px 4px;font-size:10px;border:1px solid var(--border);border-radius:3px;background:var(--surface2);color:var(--text);outline:none">${visOpts}</select>` : `<span style="font-size:10px">${folderVisLabels[vis]}</span>`}
-        </div>
-        <div style="font-size:11px;color:var(--text-dim);margin-top:4px">双击进入</div>
-      `;
-      if (canDeleteProject(f)) {
-        card.querySelector('.p-del').addEventListener('click', async (e) => {
-          e.stopPropagation();
-          console.log('删除文件夹按钮被点击:', f.name, f.id);
-          if (await showConfirm(`删除文件夹「${f.name}」及其所有子项目？`, '删除确认', '🗑️')) {
-            console.log('确认删除文件夹:', f.name);
-            // 使用 parentId 查找子项目
-            const childProjects = projects.filter(p => p.parentId === f.id);
-            childProjects.forEach(c => socket.emit('project-delete', c.id));
-            socket.emit('project-delete', f.id);
-          }
-        });
-      } else { card.querySelector('.p-del').style.display = 'none'; }
-      
-      let clickCount = 0;
-      let clickTimer = null;
-      card.addEventListener('click', () => {
-        clickCount++;
-        if (clickTimer) clearTimeout(clickTimer);
-        if (clickCount === 2) {
-          // 双击进入文件夹 - 检查权限
-          if (!canViewFolder(f)) {
-            showToast('🔒 此文件夹内容不可查看');
-            clickCount = 0;
-            return;
-          }
-          currentFolderPath.push({ id: f.id, name: f.name });
-          renderProjects();
-          clickCount = 0;
-        } else {
-          clickTimer = setTimeout(() => {
-            clickCount = 0;
-            // 单击打开 - 检查权限
-            if (!canViewFolder(f)) {
-              showToast('🔒 此文件夹内容不可查看');
-              return;
-            }
-            openProject(f);
-          }, 300);
-        }
-      });
+    const localProjects = visibleProjects.filter(p => !p.syncedFrom);
+    const syncedProjects = visibleProjects.filter(p => p.syncedFrom);
 
-      // 文件夹可见性选择
-      const folderVisSel = card.querySelector('.vis-select');
-      if (folderVisSel) {
-        folderVisSel.onclick = (e) => e.stopPropagation();
-        folderVisSel.onchange = function() {
-          socket.emit('project-set-visibility', { projectId: f.id, visibility: this.value });
-        };
-      }
-      
-      projectList.appendChild(card);
-    });
+    localProjects.filter(p => p.type === 'folder').forEach(f => renderFolderCard(f, false));
+    localProjects.filter(p => p.type !== 'folder').forEach(p => renderProjectCard(p, false));
 
-    items.forEach(p => {
-      const icons = { script: '📜', mindmap: '🧠', story: '📖', folder: '📁', project: '🎬' };
-      const names = { script: '剧本', mindmap: '思维导图', story: '故事', folder: '文件夹', project: '项目' };
-      const vis = p.visibility || 'private';
-      const canChange = isAdmin || p.owner === myName;
-      const visOpts = ['private', 'public-read', 'public-edit'].map(v =>
-        `<option value="${v}"${vis === v ? ' selected' : ''}>${visLabels[v]}</option>`
-      ).join('');
-      const card = document.createElement('div');
-      card.className = 'project-card';
-      card.innerHTML = `
-        <span class="p-type">${icons[p.type] || '📄'}</span>
-        <button class="p-del" data-id="${p.id}">×</button>
-        <div class="p-name">${esc(cleanProjectName(p.name))}</div>
-        <div class="p-meta" style="display:flex;align-items:center;gap:4px;flex-wrap:wrap">
-          <span title="${visLabels[vis]}">${visIcons[vis] || '🔒'}</span>
-          ${p.type === 'project' ? ('项目 · ' + ((p.data && p.data.items) ? p.data.items.length + '个子项' : '0个子项')) : (names[p.type] || p.type)} · ${timeAgo(p.updatedAt)}
-        </div>
-        <div class="p-owner">${esc(p.owner || '我')}</div>
-        ${canChange ? `<div style="margin-top:4px"><select class="vis-select" data-id="${p.id}" style="padding:1px 4px;font-size:10px;border:1px solid var(--border);border-radius:3px;background:var(--surface2);color:var(--text);outline:none">${visOpts}</select></div>` : `<div style="margin-top:4px;font-size:10px;color:var(--text-dim)">${visIcons[vis]} ${visLabels[vis]}</div>`}
-      `;
-      if (canDeleteProject(p)) {
-        card.querySelector('.p-del').addEventListener('click', async (e) => {
-          e.stopPropagation();
-          if (await showConfirm(`删除「${p.name}」？`, '删除确认', '🗑️')) socket.emit('project-delete', p.id);
-        });
-      } else {
-        card.querySelector('.p-del').style.display = 'none';
-      }
-      card.addEventListener('click', () => openProject(p));
-      const visSel = card.querySelector('.vis-select');
-      if (visSel) {
-        visSel.onclick = (e) => e.stopPropagation();
-        visSel.onchange = function() {
-          socket.emit('project-set-visibility', { projectId: p.id, visibility: this.value });
-        };
-      }
-      projectList.appendChild(card);
-    });
+    if (syncedProjects.length > 0) {
+      const divider = document.createElement('div');
+      divider.className = 'sync-divider';
+      divider.innerHTML = '<span class="sync-divider-line"></span><span class="sync-divider-text">来自局域网</span><span class="sync-divider-line"></span>';
+      projectList.appendChild(divider);
+      syncedProjects.filter(p => p.type === 'folder').forEach(f => renderFolderCard(f, true));
+      syncedProjects.filter(p => p.type !== 'folder').forEach(p => renderProjectCard(p, true));
+    }
   } else {
     visibleProjects.sort((a, b) => (b.deletedAt || 0) - (a.deletedAt || 0));
-    visibleProjects.forEach(p => {
-      const icons = { script: '📜', mindmap: '🧠', story: '📖', folder: '📁', project: '🎬' };
-      const names = { script: '剧本', mindmap: '思维导图', story: '故事', folder: '文件夹', project: '项目' };
-      const card = document.createElement('div');
-      card.className = 'project-card trash';
-      card.innerHTML = `
-        <span class="p-type">${icons[p.type] || '📄'}</span>
-        <div class="p-name" style="color:var(--text-dim);text-decoration:line-through">${esc(cleanProjectName(p.name))}</div>
-        <div class="p-meta">${names[p.type] || p.type} · ${timeAgo(p.deletedAt)} 前删除</div>
-        <div class="p-owner">${esc(p.owner || '我')}</div>
-        <div class="trash-actions" style="margin-top:6px;display:flex;gap:6px">
-          <button class="trash-restore-btn" data-id="${p.id}" style="padding:2px 10px;font-size:11px;background:var(--green);border:none;border-radius:4px;color:#000;cursor:pointer">↩ 恢复</button>
-          <button class="trash-del-btn" data-id="${p.id}" style="padding:2px 10px;font-size:11px;background:var(--danger);border:none;border-radius:4px;color:#fff;cursor:pointer">🗑️ 永久删除</button>
-        </div>
-      `;
-      card.querySelector('.trash-restore-btn').addEventListener('click', async (e) => {
-        e.stopPropagation();
-        socket.emit('project-restore', p.id);
-      });
-      card.querySelector('.trash-del-btn').addEventListener('click', async (e) => {
-        e.stopPropagation();
-        console.log('永久删除按钮被点击:', p.id, p.name);
-        if (await showConfirm('确定要永久删除吗？此操作不可撤销！', '永久删除确认', '⚠️')) {
-          console.log('确认永久删除，发送请求:', p.id);
-          socket.emit('project-permanent-delete', p.id);
-          // 直接更新本地状态，不等待服务器响应
-          const idx = projects.findIndex(item => item.id === p.id);
-          if (idx >= 0) projects.splice(idx, 1);
-          renderProjects();
-        } else {
-          console.log('取消永久删除');
-        }
-      });
-      projectList.appendChild(card);
-    });
+    visibleProjects.forEach(p => renderTrashCard(p));
   }
+}
+
+function renderFolderCard(f, isSynced) {
+  const vis = f.visibility || 'private';
+  const canChange = !isSynced && (isAdmin || f.owner === myName);
+  const folderVisLabels = { 'private': '不让查看', 'public-read': '查看', 'public-edit': '编辑' };
+  const folderVisIcons = { 'private': '🔒', 'public-read': '👁️', 'public-edit': '✏️' };
+  const visOpts = ['private', 'public-read', 'public-edit'].map(v =>
+    `<option value="${v}"${vis === v ? ' selected' : ''}>${folderVisLabels[v]}</option>`
+  ).join('');
+  const sourceLabel = isSynced && f.syncedFrom ? ` · 来自 ${esc(f.syncedFrom.serverName || '未知设备')}` : '';
+  const card = document.createElement('div');
+  card.className = 'project-card folder' + (isSynced ? ' synced' : '');
+  const childCount = projects.filter(p => !p.deleted && p.parentId === f.id).length;
+  card.innerHTML = `
+    <span class="p-type">📁</span>
+    <button class="p-del" data-id="${f.id}">×</button>
+    <div class="p-name">${esc(cleanProjectName(f.name))}</div>
+    <div class="p-meta">文件夹 · ${childCount} 个项目 · ${timeAgo(f.updatedAt)}</div>
+    <div class="p-owner">${esc(f.owner || '我')}${sourceLabel}</div>
+    <div style="font-size:11px;color:var(--text-dim);margin-top:2px;display:flex;align-items:center;gap:4px">
+      <span title="${folderVisLabels[vis]}">${folderVisIcons[vis]}</span>
+      ${canChange ? `<select class="vis-select" data-id="${f.id}" style="padding:1px 4px;font-size:10px;border:1px solid var(--border);border-radius:3px;background:var(--surface2);color:var(--text);outline:none">${visOpts}</select>` : `<span style="font-size:10px">${folderVisLabels[vis]}</span>`}
+    </div>
+    <div style="font-size:11px;color:var(--text-dim);margin-top:4px">双击进入</div>
+  `;
+
+  if (!isSynced && canDeleteProject(f)) {
+    card.querySelector('.p-del').addEventListener('click', async (e) => {
+      e.stopPropagation();
+      if (await showConfirm(`删除文件夹「${f.name}」及其所有子项目？`, '删除确认', '🗑️')) {
+        projects.filter(p => p.parentId === f.id).forEach(c => socket.emit('project-delete', c.id));
+        socket.emit('project-delete', f.id);
+      }
+    });
+  } else {
+    card.querySelector('.p-del').style.display = 'none';
+  }
+
+  let clickCount = 0;
+  let clickTimer = null;
+  card.addEventListener('click', () => {
+    clickCount++;
+    if (clickTimer) clearTimeout(clickTimer);
+    if (clickCount === 2) {
+      if (!canViewFolder(f)) { showToast('🔒 此文件夹内容不可查看'); clickCount = 0; return; }
+      currentFolderPath.push({ id: f.id, name: f.name });
+      renderProjects();
+      clickCount = 0;
+    } else {
+      clickTimer = setTimeout(() => {
+        clickCount = 0;
+        if (!canViewFolder(f)) { showToast('🔒 此文件夹内容不可查看'); return; }
+        openProject(f);
+      }, 300);
+    }
+  });
+
+  const folderVisSel = card.querySelector('.vis-select');
+  if (folderVisSel) {
+    folderVisSel.onclick = (e) => e.stopPropagation();
+    folderVisSel.onchange = function() {
+      socket.emit('project-set-visibility', { projectId: f.id, visibility: this.value });
+    };
+  }
+
+  projectList.appendChild(card);
+}
+
+function renderProjectCard(p, isSynced) {
+  const icons = { script: '📜', mindmap: '🧠', story: '📖', folder: '📁', project: '🎬' };
+  const names = { script: '剧本', mindmap: '思维导图', story: '故事', folder: '文件夹', project: '项目' };
+  const visIcons = { 'private': '🔒', 'public-read': '👁️', 'public-edit': '✏️' };
+  const visLabels = { 'private': '私密', 'public-read': '公开-只读', 'public-edit': '公开-可编辑' };
+  const vis = p.visibility || 'private';
+  const canChange = !isSynced && (isAdmin || p.owner === myName);
+  const sourceLabel = isSynced && p.syncedFrom ? ` · 来自 ${esc(p.syncedFrom.serverName || '未知设备')}` : '';
+  const visOpts = ['private', 'public-read', 'public-edit'].map(v =>
+    `<option value="${v}"${vis === v ? ' selected' : ''}>${visLabels[v]}</option>`
+  ).join('');
+  const card = document.createElement('div');
+  card.className = 'project-card' + (isSynced ? ' synced' : '');
+  card.innerHTML = `
+    <span class="p-type">${icons[p.type] || '📄'}</span>
+    <button class="p-del" data-id="${p.id}">×</button>
+    <div class="p-name">${esc(cleanProjectName(p.name))}</div>
+    <div class="p-meta" style="display:flex;align-items:center;gap:4px;flex-wrap:wrap">
+      <span title="${visLabels[vis]}">${visIcons[vis] || '🔒'}</span>
+      ${p.type === 'project' ? ('项目 · ' + ((p.data && p.data.items) ? p.data.items.length + '个子项' : '0个子项')) : (names[p.type] || p.type)} · ${timeAgo(p.updatedAt)}
+    </div>
+    <div class="p-owner">${esc(p.owner || '我')}${sourceLabel}</div>
+    ${canChange ? `<div style="margin-top:4px"><select class="vis-select" data-id="${p.id}" style="padding:1px 4px;font-size:10px;border:1px solid var(--border);border-radius:3px;background:var(--surface2);color:var(--text);outline:none">${visOpts}</select></div>` : `<div style="margin-top:4px;font-size:10px;color:var(--text-dim)">${visIcons[vis]} ${visLabels[vis]}</div>`}
+  `;
+  if (!isSynced && canDeleteProject(p)) {
+    card.querySelector('.p-del').addEventListener('click', async (e) => {
+      e.stopPropagation();
+      if (await showConfirm(`删除「${p.name}」？`, '删除确认', '🗑️')) socket.emit('project-delete', p.id);
+    });
+  } else {
+    card.querySelector('.p-del').style.display = 'none';
+  }
+  card.addEventListener('click', () => openProject(p));
+  const visSel = card.querySelector('.vis-select');
+  if (visSel) {
+    visSel.onclick = (e) => e.stopPropagation();
+    visSel.onchange = function() {
+      socket.emit('project-set-visibility', { projectId: p.id, visibility: this.value });
+    };
+  }
+  projectList.appendChild(card);
+}
+
+function renderTrashCard(p) {
+  const icons = { script: '📜', mindmap: '🧠', story: '📖', folder: '📁', project: '🎬' };
+  const names = { script: '剧本', mindmap: '思维导图', story: '故事', folder: '文件夹', project: '项目' };
+  const card = document.createElement('div');
+  card.className = 'project-card trash';
+  card.innerHTML = `
+    <span class="p-type">${icons[p.type] || '📄'}</span>
+    <div class="p-name" style="color:var(--text-dim);text-decoration:line-through">${esc(cleanProjectName(p.name))}</div>
+    <div class="p-meta">${names[p.type] || p.type} · ${timeAgo(p.deletedAt)} 前删除</div>
+    <div class="p-owner">${esc(p.owner || '我')}</div>
+    <div class="trash-actions" style="margin-top:6px;display:flex;gap:6px">
+      <button class="trash-restore-btn" data-id="${p.id}" style="padding:2px 10px;font-size:11px;background:var(--green);border:none;border-radius:4px;color:#000;cursor:pointer">↩ 恢复</button>
+      <button class="trash-del-btn" data-id="${p.id}" style="padding:2px 10px;font-size:11px;background:var(--danger);border:none;border-radius:4px;color:#fff;cursor:pointer">🗑️ 永久删除</button>
+    </div>
+  `;
+  card.querySelector('.trash-restore-btn').addEventListener('click', async (e) => {
+    e.stopPropagation();
+    socket.emit('project-restore', p.id);
+  });
+  card.querySelector('.trash-del-btn').addEventListener('click', async (e) => {
+    e.stopPropagation();
+    if (await showConfirm('确定要永久删除吗？此操作不可撤销！', '永久删除确认', '⚠️')) {
+      socket.emit('project-permanent-delete', p.id);
+      const idx = projects.findIndex(item => item.id === p.id);
+      if (idx >= 0) projects.splice(idx, 1);
+      renderProjects();
+    }
+  });
+  projectList.appendChild(card);
 }
 
 function canDeleteProject(p) {
@@ -2211,6 +2171,34 @@ function initUI() {
       socket.emit('refresh-lan');
     });
   }
+
+  // ── 二维码弹窗 ──
+  if (qrBtn) {
+    qrBtn.addEventListener('click', async () => {
+      qrModal.style.display = 'flex';
+      qrImageBox.innerHTML = '<div style="color:var(--text-dim);font-size:13px">生成中...</div>';
+      qrUrlText.textContent = '';
+      try {
+        const resp = await fetch('/api/lan-url');
+        const data = await resp.json();
+        if (data.qr) {
+          qrImageBox.innerHTML = `<img src="${data.qr}" style="width:240px;height:240px;border-radius:8px;background:#fff;padding:8px" alt="QR Code">`;
+          qrUrlText.textContent = data.url;
+        } else {
+          qrImageBox.innerHTML = '<div style="color:#e57373;font-size:13px">二维码生成失败</div>';
+          qrUrlText.textContent = data.url || '';
+        }
+      } catch (e) {
+        qrImageBox.innerHTML = '<div style="color:#e57373;font-size:13px">获取失败，请检查服务是否运行</div>';
+      }
+    });
+  }
+  if (qrClose) {
+    qrClose.addEventListener('click', () => { qrModal.style.display = 'none'; });
+  }
+  if (qrModal) {
+    qrModal.addEventListener('click', (e) => { if (e.target === qrModal) qrModal.style.display = 'none'; });
+  }
   
   renderProjects();
 
@@ -2234,6 +2222,49 @@ function setupSettings() {
       if (section) section.style.display = 'block';
     });
   });
+
+  // AI 配置加载与保存
+  const aiTokenInput = document.getElementById('ai-token-input');
+  const aiModelInput = document.getElementById('ai-model-input');
+  const aiUrlInput = document.getElementById('ai-url-input');
+  const aiConfigStatus = document.getElementById('ai-config-status');
+  const aiConfigSave = document.getElementById('ai-config-save');
+  if (aiConfigSave) {
+    // 加载当前配置
+    fetch('/api/ai/config').then(r => r.json()).then(cfg => {
+      if (cfg.configured) {
+        aiConfigStatus.textContent = '✅ 已配置';
+        aiConfigStatus.style.color = '#10b981';
+      }
+      if (cfg.model) aiModelInput.value = cfg.model;
+      if (cfg.api_url) aiUrlInput.value = cfg.api_url;
+    }).catch(() => {});
+    aiConfigSave.addEventListener('click', async () => {
+      aiConfigStatus.textContent = '保存中...';
+      try {
+        const resp = await fetch('/api/ai/config', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            api_token: aiTokenInput.value.trim(),
+            api_url: aiUrlInput.value.trim(),
+            model: aiModelInput.value.trim()
+          })
+        });
+        const data = await resp.json();
+        if (data.ok) {
+          aiConfigStatus.textContent = '✅ 已保存';
+          aiConfigStatus.style.color = '#10b981';
+          aiTokenInput.value = '';
+        } else {
+          aiConfigStatus.textContent = '❌ 保存失败';
+          aiConfigStatus.style.color = '#ef4444';
+        }
+      } catch (e) {
+        aiConfigStatus.textContent = '❌ ' + e.message;
+        aiConfigStatus.style.color = '#ef4444';
+      }
+    });
+  }
 
   // 头像上传按钮
   const avatarBtn = document.getElementById('avatar-upload-btn');

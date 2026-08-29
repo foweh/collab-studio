@@ -122,6 +122,10 @@ namespace CollabStudioLauncher
 
         private string FindNodeExe()
         {
+            // 0) 优先查找应用目录内置的 node.exe
+            var bundledNode = Path.Combine(installDir, "node.exe");
+            if (File.Exists(bundledNode)) return bundledNode;
+
             // 1) 查注册表
             string[] regPaths =
             {
