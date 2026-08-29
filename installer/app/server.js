@@ -95,7 +95,7 @@ const adminConfig = loadAdminConfig();
 const ADMIN_USERNAME = adminConfig.ADMIN_USERNAME || 'admin';
 const ADMIN_PASSWORD = adminConfig.ADMIN_PASSWORD || process.env.ADMIN_PASSWORD || null;
 let HTTP_PORT = parseInt(process.env.PORT) || 3000;
-const UDP_PORT = 41234;
+const UDP_PORT = parseInt(process.env.UDP_PORT) || 41234;
 const SCAN_DURATION = 5 * 60 * 1000;
 
 // ─── 集中配置常量（P2-14：魔法数字集中，不改行为） ──────
@@ -129,7 +129,7 @@ const projectRedoOps = new Map(); // projectId → [{ userId, action, before, af
 
 // ─── PySceneDetect (Flask) 子进程管理 ──────────────────
 const SCENEDETECT_DIR = path.join(__dirname, 'scenedetect-server');
-const SCENEDETECT_PORT = 5000;
+const SCENEDETECT_PORT = parseInt(process.env.SCENEDETECT_PORT) || 5000;
 let flaskProcess = null;
 
 function startFlaskServer() {
@@ -141,6 +141,7 @@ function startFlaskServer() {
   flaskProcess = spawn('python', ['server.py'], {
     cwd: SCENEDETECT_DIR,
     stdio: ['ignore', 'pipe', 'pipe'],
+    env: { ...process.env, SCENEDETECT_PORT: String(SCENEDETECT_PORT) },
     windowsHide: true
   });
   flaskProcess.stdout.on('data', d => {
@@ -487,7 +488,7 @@ try {
   console.warn('[SSL] 证书未找到，仅启动 HTTP:', e.message);
 }
 
-const HTTPS_PORT = 443;
+const HTTPS_PORT = parseInt(process.env.HTTPS_PORT) || 443;
 const server = sslOptions ? https.createServer(sslOptions, app) : http.createServer(app);
 const io = new SocketIOServer(server, {
   cors: false,

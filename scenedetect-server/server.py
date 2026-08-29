@@ -451,6 +451,8 @@ def system_info():
     return jsonify(info)
 
 if __name__ == '__main__':
+    import os
+    port = int(os.environ.get('SCENEDETECT_PORT', '5000'))
     print("Starting Scene Detection Web Server...")
-    print("Server running at: http://localhost:5000")
-    app.run(host='0.0.0.0', port=5000, debug=False, threaded=True)
+    print("Server running at: http://localhost:%d" % port)
+    app.run(host='0.0.0.0', port=port, debug=False, threaded=True)
