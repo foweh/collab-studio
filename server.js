@@ -576,6 +576,10 @@ app.post('/api/ai/mindmap/generate', async (req, res) => {
   if (!topic) return res.status(400).json({ error: '请提供主题' });
   const cfg = ai.loadConfig();
   if (!cfg.api_token) return res.status(400).json({ error: '请先在设置中配置 DeepSeek API Token' });
+  const ip = req.ip || (req.socket && req.socket.remoteAddress) || 'unknown';
+  if (!checkRateLimit(`ai:generate:${ip}`, 5, 60000)) {
+    return res.status(429).json({ error: 'AI 调用过于频繁，请稍后再试' });
+  }
   try {
     const data = await ai.generateMindmap(topic, cfg);
     res.json(data);
@@ -589,6 +593,10 @@ app.post('/api/ai/mindmap/expand', async (req, res) => {
   if (!nodeText) return res.status(400).json({ error: '请提供节点信息' });
   const cfg = ai.loadConfig();
   if (!cfg.api_token) return res.status(400).json({ error: '请先在设置中配置 DeepSeek API Token' });
+  const ip = req.ip || (req.socket && req.socket.remoteAddress) || 'unknown';
+  if (!checkRateLimit(`ai:expand:${ip}`, 5, 60000)) {
+    return res.status(429).json({ error: 'AI 调用过于频繁，请稍后再试' });
+  }
   try {
     const data = await ai.expandNode(nodeText, context || '', cfg);
     res.json(data);
@@ -602,6 +610,10 @@ app.post('/api/ai/mindmap/chat', async (req, res) => {
   if (!message) return res.status(400).json({ error: '请提供消息' });
   const cfg = ai.loadConfig();
   if (!cfg.api_token) return res.status(400).json({ error: '请先在设置中配置 DeepSeek API Token' });
+  const ip = req.ip || (req.socket && req.socket.remoteAddress) || 'unknown';
+  if (!checkRateLimit(`ai:chat:${ip}`, 5, 60000)) {
+    return res.status(429).json({ error: 'AI 调用过于频繁，请稍后再试' });
+  }
   try {
     const data = await ai.chatControl(message, JSON.stringify(mindmap || {}), history || [], cfg);
     res.json(data);
