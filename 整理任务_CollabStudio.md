@@ -114,12 +114,13 @@ Collab Studio 是一个"创作协作全家桶":剧本/故事/导图/分镜实时
 ## P2 — 加固与体验(下个迭代)
 
 ### P2-10:HTTPS 证书生成脚本
-- 状态:[ ]
+- 状态:[x]
 - 问题:仅自动检测 `ssl/` 目录证书,无证书则明文 HTTP;缺少 HTTPS 部署说明
 - 涉及文件:新建 `scripts/gen-ssl-certs.js`、`README.md`
 - 修复:openssl 自签名证书生成脚本 + README HTTPS 部署章节
 - 预期结果:可一键生成证书启用 HTTPS
 - 验收:脚本生成 `ssl/privkey.pem` + `ssl/cert.pem`,README 有说明
+- 结果:✅ 脚本已创建并实测生成证书成功(openssl 自签,含 SAN,10 年有效期);server.js SSL 加载验证通过;`ssl/` 已加入 .gitignore;README HTTPS 章节在 P2-15 统一补充
 
 ### P2-11:剪映安装路径可配置
 - 状态:[ ]
@@ -176,7 +177,7 @@ Collab Studio 是一个"创作协作全家桶":剧本/故事/导图/分镜实时
 | P1-7 | [x] | - | - |
 | P1-8 | [x] | - | - |
 | P1-9 | [x] | - | - |
-| P2-10 | [ ] | - | - |
+| P2-10 | [x] | - | - |
 | P2-11 | [ ] | - | - |
 | P2-12 | [ ] | - | - |
 | P2-13 | [ ] | - | - |
