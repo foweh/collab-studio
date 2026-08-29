@@ -1380,7 +1380,7 @@ io.on('connection', (socket) => {
       createdAt: Date.now(), 
       updatedAt: Date.now(), 
       owner: socket.userName || SERVER_NAME, 
-      visibility: 'private',
+      visibility: VALID_VISIBILITY.includes(data.visibility) ? data.visibility : 'private',
       parentId: data.parentId || undefined
     };
     projects.push(p); 
