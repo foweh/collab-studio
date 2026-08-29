@@ -23,17 +23,55 @@ function getDefaultData(type) {
     case 'storyboard': return { items: [] };
     case 'folder': return { children: [] };
     case 'project': return { items: [] };
+    // ── 部门化新类型(阶段三) ──
+    case 'article': return { title: '', summary: '', cover: '', content: '', status: 'draft' };       // 推文(采编部)
+    case 'design-task': return { title: '', description: '', status: 'todo', assignee: '' };           // 设计任务(文化设计部)
+    case 'activity': return { title: '', plan: '', budget: '', status: 'planning' };                   // 活动(活动策划部)
+    case 'meeting': return { title: '', date: '', attendees: [], minutes: '', status: 'draft' };       // 会议记录(秘书处)
+    case 'audio-project': return { title: '', scripts: [], status: 'draft' };                          // 音频项目(主持播音部)
+    case 'video-project': return { title: '', status: 'preproduction', links: [] };                    // 视频项目(传媒/多媒体部)
     default: return {};
   }
 }
 
+// 部门 → 默认项目类型映射(工作台默认视图)
+const DEPT_DEFAULT_TYPES = {
+  'media-directing': 'storyboard',   // 传媒编导部: 分镜
+  'editorial-public': 'article',     // 采编宣传部: 推文
+  'culture-design': 'design-task',   // 文化设计部: 设计任务
+  'secretariat': 'meeting',          // 秘书处: 会议记录
+  'host-broadcast': 'audio-project', // 主持播音部: 音频项目
+  'dev-operations': 'mindmap',       // 发展运营部: 导图(流程规划)
+  'multimedia': 'video-project',     // 多媒体工作部: 视频项目
+  'event-planning': 'activity',      // 活动策划部: 活动
+};
+
+// 部门 → 可用类型列表(工作台可创建)
+const DEPT_ALLOWED_TYPES = {
+  'media-directing': ['storyboard', 'script', 'video-project', 'mindmap'],
+  'editorial-public': ['article', 'mindmap'],
+  'culture-design': ['design-task', 'mindmap'],
+  'secretariat': ['meeting', 'mindmap'],
+  'host-broadcast': ['audio-project', 'mindmap'],
+  'dev-operations': ['mindmap'],
+  'multimedia': ['video-project', 'script', 'storyboard', 'mindmap'],
+  'event-planning': ['activity', 'mindmap'],
+};
+
+function getDeptDefaultType(deptId) { return DEPT_DEFAULT_TYPES[deptId] || 'mindmap'; }
+function getDeptAllowedTypes(deptId) { return DEPT_ALLOWED_TYPES[deptId] || ['mindmap']; }
+
 function getDefaultItemName(type) {
-  const names = { script: '新剧本', mindmap: '新导图', story: '新故事', storyboard: '新分镜' };
+  const names = { script: '新剧本', mindmap: '新导图', story: '新故事', storyboard: '新分镜',
+    article: '新推文', 'design-task': '新设计任务', activity: '新活动', meeting: '新会议记录',
+    'audio-project': '新音频项目', 'video-project': '新视频项目' };
   return names[type] || '新项目';
 }
 
 function getItemTypeLabel(type) {
-  const labels = { script: '剧本', mindmap: '导图', story: '故事', storyboard: '分镜' };
+  const labels = { script: '剧本', mindmap: '导图', story: '故事', storyboard: '分镜',
+    article: '推文', 'design-task': '设计任务', activity: '活动', meeting: '会议记录',
+    'audio-project': '音频项目', 'video-project': '视频项目' };
   return labels[type] || type;
 }
 
@@ -361,4 +399,6 @@ module.exports = {
   getProjectAccess,
   getDefaultData,
   getItemTypeLabel,
+  getDeptDefaultType,
+  getDeptAllowedTypes,
 };
