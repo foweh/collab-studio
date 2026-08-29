@@ -44,6 +44,31 @@ const LOG_FILE = path.join(DATA_DIR, 'operation-log.json');
 const GROUPS_FILE = path.join(DATA_DIR, 'groups.json');
 const GROUP_CHAT_FILE = path.join(DATA_DIR, 'group-chat-history.json');
 
+// ─── 白板持久化存储 ─────────────────────────────────────
+// 按房间存 data/whiteboard-{room}.json，刷新/重启可恢复
+const WHITEBOARD_DIR = path.join(DATA_DIR, 'whiteboards');
+const whiteboardStore = new Map(); // room → Map<elementId, element>
+
+function loadWhiteboard(room) {
+  if (whiteboardStore.has(room)) return whiteboardStore.get(room);
+  const m = new Map();
+  const saved = loadJSON(path.join(WHITEBOARD_DIR, 'whiteboard-' + room + '.json'), []);
+  if (Array.isArray(saved)) {
+    for (const el of saved) {
+      if (el && el.id) m.set(el.id, el);
+    }
+  }
+  whiteboardStore.set(room, m);
+  return m;
+}
+
+function saveWhiteboard(room) {
+  const m = whiteboardStore.get(room);
+  if (!m) return;
+  try { fs.mkdirSync(WHITEBOARD_DIR, { recursive: true }); } catch (_) {}
+  saveJSON(path.join(WHITEBOARD_DIR, 'whiteboard-' + room + '.json'), [...m.values()]);
+}
+
 // ─── 配置 & CLI ─────────────────────────────────────────
 // 读取管理员配置文件
 function loadAdminConfig() {
@@ -1542,12 +1567,22 @@ io.on('connection', (socket) => {
   });
 
   // ── 白板实时同步 ──
+  // 房间名：客户端可传 room（默认 'default'）
+  const boardRoom = (socket.handshake.query && socket.handshake.query.board) || 'default';
+  const board = loadWhiteboard(boardRoom);
+  // 新连接发送全量历史
+  if (board.size > 0) {
+    socket.emit('whiteboard:history', { room: boardRoom, elements: [...board.values()] });
+  }
+
   socket.on('whiteboard:add', (el) => {
     if (!el || !el.id || typeof el.id !== 'string' || el.id.length > 100) return;
     const elStr = JSON.stringify(el);
     if (elStr.length > 50000) return; // 单元素最大50KB
     el.createdBy = socket.userName || el.createdBy;
     el.modifiedBy = socket.userName || el.modifiedBy;
+    board.set(el.id, el);
+    saveWhiteboard(boardRoom);
     socket.broadcast.emit('whiteboard:op', { type: 'add', elementId: el.id, after: el, userId: socket.userName, timestamp: Date.now() });
     socket.broadcast.emit('whiteboard:add', el);
   });
@@ -1557,14 +1592,29 @@ io.on('connection', (socket) => {
     const patchStr = JSON.stringify(patch || {});
     if (patchStr.length > 50000) return;
     patch.modifiedBy = socket.userName || patch.modifiedBy;
+    const existing = board.get(id);
+    if (existing) {
+      board.set(id, { ...existing, ...patch });
+    } else {
+      board.set(id, { id, ...patch });
+    }
+    saveWhiteboard(boardRoom);
     socket.broadcast.emit('whiteboard:op', { type: 'update', elementId: id, after: patch, userId: socket.userName, timestamp: Date.now() });
     socket.broadcast.emit('whiteboard:update', { id, patch });
   });
 
   socket.on('whiteboard:delete', (id) => {
     if (!id || typeof id !== 'string' || id.length > 100) return;
+    board.delete(id);
+    saveWhiteboard(boardRoom);
     socket.broadcast.emit('whiteboard:op', { type: 'delete', elementId: id, userId: socket.userName, timestamp: Date.now() });
     socket.broadcast.emit('whiteboard:delete', id);
+  });
+
+  socket.on('whiteboard:clear', () => {
+    board.clear();
+    saveWhiteboard(boardRoom);
+    socket.broadcast.emit('whiteboard:clear', {});
   });
 
   socket.on('whiteboard:cursor', (pos) => {
