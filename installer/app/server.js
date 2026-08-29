@@ -961,8 +961,8 @@ app.post('/api/materials/:id/download', (req, res) => {
   const mat = materialSvc.getMaterial(req.params.id);
   if (!mat) return res.status(404).json({ error: '素材不存在' });
   if (materialSvc.canAccessMaterial(userName, mat, auth) === 'none') return res.status(403).json({ error: '无权下载' });
-  materialSvc.incrementDownload(req.params.id);
-  res.json({ ok: true, downloadCount: mat.downloadCount + 1, url: mat.fileUrl });
+  const updated = materialSvc.incrementDownload(req.params.id);
+  res.json({ ok: true, downloadCount: updated ? updated.downloadCount : mat.downloadCount, url: mat.fileUrl });
 });
 
 // 素材文件静态服务(路径 /uploads/...)
