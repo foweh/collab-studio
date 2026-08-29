@@ -1,4 +1,13 @@
 // ─── 多机协作创作工作室 服务端 ──────────────────────────
+// 提前解析 --data-dir，确保后续 persist 模块使用自定义数据目录
+const args = process.argv.slice(2);
+for (let i = 0; i < args.length; i++) {
+  if (args[i] === '--data-dir' && args[i+1]) {
+    process.env.DATA_DIR = args[i+1];
+    i++;
+  }
+}
+
 const express = require('express');
 const http = require('http');
 const https = require('https');
@@ -19,6 +28,8 @@ const projectSvc = require('./services/project');
 const logger = require('./services/logger');
 const annotationSvc = require('./services/annotation');
 const { getCapCutMateClient } = require('./services/capcut-mate');
+const QRCode = require('qrcode');
+const ai = require('./services/ai');
 const { users } = auth; // 直接引用 users 对象以兼容现有代码
 
 // ─── 文件路径 ────────────────────────────────────────────
@@ -56,13 +67,12 @@ function loadAdminConfig() {
 }
 
 const adminConfig = loadAdminConfig();
-const ADMIN_USERNAME = adminConfig.ADMIN_USERNAME || '热合曼';
+const ADMIN_USERNAME = adminConfig.ADMIN_USERNAME || 'admin';
 const ADMIN_PASSWORD = adminConfig.ADMIN_PASSWORD || process.env.ADMIN_PASSWORD || null;
 let HTTP_PORT = parseInt(process.env.PORT) || 3000;
 const UDP_PORT = 41234;
 const SCAN_DURATION = 5 * 60 * 1000;
 
-const args = process.argv.slice(2);
 let JOIN_TARGET = null;
 let CAPCUT_MATE_PORT = parseInt(process.env.CAPCUT_MATE_PORT) || 0;
 for (let i = 0; i < args.length; i++) {
@@ -475,14 +485,6 @@ app.post('/api/upload-avatar', async (req, res) => {
   }
 });
 
-// ─── 音乐工作台（禁止缓存，必须在 static 之前） ──────────
-app.get('/music-studio.html', (req, res) => {
-  res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate');
-  res.setHeader('Pragma', 'no-cache');
-  res.setHeader('Expires', '0');
-  res.sendFile(path.join(__dirname, 'public', 'music-studio.html'));
-});
-
 // ─── 场景检测 (PySceneDetect) API ────────────────────
 // 反向代理到 Flask 服务
 
@@ -530,6 +532,82 @@ app.get('/api/scenedetect/progress', (req, res) => {
 });
 app.get('/api/scenedetect/system-info', (req, res) => {
   proxyToFlask(req, res, 'system-info');
+});
+
+// ─── 局域网二维码 ──────────────────────────────────────
+app.get('/api/lan-url', async (req, res) => {
+  let ip = 'localhost';
+  try {
+    for (const name of Object.keys(os.networkInterfaces()))
+      for (const iface of os.networkInterfaces()[name])
+        if (iface.family === 'IPv4' && !iface.internal) { ip = iface.address; break; }
+  } catch (_) {}
+  const proto = sslOptions ? 'https' : 'http';
+  const port = sslOptions ? HTTPS_PORT : HTTP_PORT;
+  const url = `${proto}://${ip}:${port}`;
+  try {
+    const qrDataUrl = await QRCode.toDataURL(url, { width: 240, margin: 1 });
+    res.json({ url, qr: qrDataUrl });
+  } catch (e) {
+    res.json({ url, qr: null });
+  }
+});
+
+// ─── AI (DeepSeek) API ────────────────────────────────
+// 思维导图 AI 生成、展开、聊天控制
+
+app.get('/api/ai/config', (req, res) => {
+  const cfg = ai.loadConfig();
+  res.json({ configured: !!cfg.api_token, model: cfg.model, api_url: cfg.api_url });
+});
+
+app.post('/api/ai/config', (req, res) => {
+  const { api_token, api_url, model } = req.body || {};
+  const cfg = ai.loadConfig();
+  if (api_token !== undefined) cfg.api_token = api_token;
+  if (api_url !== undefined) cfg.api_url = api_url;
+  if (model !== undefined) cfg.model = model;
+  ai.saveConfig(cfg);
+  res.json({ ok: true, configured: !!cfg.api_token });
+});
+
+app.post('/api/ai/mindmap/generate', async (req, res) => {
+  const { topic } = req.body || {};
+  if (!topic) return res.status(400).json({ error: '请提供主题' });
+  const cfg = ai.loadConfig();
+  if (!cfg.api_token) return res.status(400).json({ error: '请先在设置中配置 DeepSeek API Token' });
+  try {
+    const data = await ai.generateMindmap(topic, cfg);
+    res.json(data);
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+app.post('/api/ai/mindmap/expand', async (req, res) => {
+  const { nodeText, context } = req.body || {};
+  if (!nodeText) return res.status(400).json({ error: '请提供节点信息' });
+  const cfg = ai.loadConfig();
+  if (!cfg.api_token) return res.status(400).json({ error: '请先在设置中配置 DeepSeek API Token' });
+  try {
+    const data = await ai.expandNode(nodeText, context || '', cfg);
+    res.json(data);
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+app.post('/api/ai/mindmap/chat', async (req, res) => {
+  const { message, mindmap, history } = req.body || {};
+  if (!message) return res.status(400).json({ error: '请提供消息' });
+  const cfg = ai.loadConfig();
+  if (!cfg.api_token) return res.status(400).json({ error: '请先在设置中配置 DeepSeek API Token' });
+  try {
+    const data = await ai.chatControl(message, JSON.stringify(mindmap || {}), history || [], cfg);
+    res.json(data);
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
 });
 
 // ─── CapCut Mate API ──────────────────────────────────
@@ -805,57 +883,6 @@ function httpJSON(url, opts = {}) {
   });
 }
 
-app.post('/api/music-search', async (req, res) => {
-  try {
-    const { source, query, page } = req.body;
-    if (!query) return res.status(400).json({ error: 'Missing query' });
-
-    if (source === 'kg') {
-      const kgUrl = `https://songsearch.kugou.com/song_search_v2?keyword=${encodeURIComponent(query)}&page=${page || 1}&pagesize=30&userid=0&clientver=&platform=WebFilter&filter=2&iscorrection=1&privilege_filter=0&area_code=1`;
-      const data = await httpJSON(kgUrl, {
-        headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36' }
-      });
-      return res.json(data);
-    } else {
-      const body = JSON.stringify({
-        req_1: {
-          method: 'DoSearchForQQMusicDesktop',
-          module: 'music.search.SearchCgiService',
-          param: { num_per_page: 30, page_num: page || 1, query, search_type: 0 }
-        }
-      });
-      const data = await httpJSON('https://u.y.qq.com/cgi-bin/musicu.fcg', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(body) },
-        body
-      });
-      return res.json(data);
-    }
-  } catch (err) {
-    console.error('[music-search]', err.message);
-    res.status(502).json({ error: err.message });
-  }
-});
-
-// ─── 音乐 URL 代理（解决 lxmusicapi CORS 限制） ────────────
-app.get('/api/music-url', async (req, res) => {
-  try {
-    const { source, songId, quality } = req.query;
-    if (!songId) return res.status(400).json({ error: 'Missing songId' });
-    const prefix = source || 'tx';
-    const q = quality || '128k';
-    const url = `https://lxmusicapi.onrender.com/url/${prefix}/${songId}/${q}`;
-    const data = await httpJSON(url, {
-      headers: { 'X-Request-Key': 'share-v3' }
-    });
-    if (data.code !== 0) throw new Error(data.msg || '获取音频URL失败');
-    res.json({ url: data.url });
-  } catch (err) {
-    console.error('[music-url]', err.message);
-    res.status(502).json({ error: err.message });
-  }
-});
-
 let broadcastDiscover = () => {};
 if (!JOIN_TARGET) {
   const udp = dgram.createSocket({ type: 'udp4', reuseAddr: true });
@@ -918,7 +945,7 @@ function setupBridge(bridgeSocket, remoteIp, isIncoming) {
       ex.socket = bridgeSocket; ex.connected = true; ex.name = data.name; ex.reconnectTimer = null;
       broadcastPeers();
       bridgeSocket.emit('handshake-ack', { serverId: SERVER_ID, name: SERVER_NAME, port: HTTP_PORT });
-      sendToPeer(data.serverId, { type: 'projects-sync', projects: projects.map(x => ({...x})) });
+      sendToPeer(data.serverId, { type: 'projects-sync', projects: projectSvc.getShareableProjects() });
       bridgeSocket.on('bridge-msg', (msg) => handleBridgeMessage(data.serverId, msg));
       bridgeSocket.on('disconnect', () => handlePeerDisconnect(data.serverId));
       return;
@@ -929,7 +956,7 @@ function setupBridge(bridgeSocket, remoteIp, isIncoming) {
     console.log(`[桥接] ${isIncoming ? '接受' : '连接'} ${data.name}`);
     foundPeer();
     bridgeSocket.emit('handshake-ack', { serverId: SERVER_ID, name: SERVER_NAME, port: HTTP_PORT });
-    sendToPeer(data.serverId, { type: 'projects-sync', projects: projects.map(x => ({...x})) });
+    sendToPeer(data.serverId, { type: 'projects-sync', projects: projectSvc.getShareableProjects() });
     broadcastPeers();
     bridgeSocket.on('bridge-msg', (msg) => handleBridgeMessage(data.serverId, msg));
     bridgeSocket.on('disconnect', () => handlePeerDisconnect(data.serverId));
@@ -1266,7 +1293,7 @@ io.on('connection', (socket) => {
     console.log('项目创建成功:', p);
     socket.emit('project-created', p);
     addLog(socket.id, socket.userName || SERVER_NAME, 'created', p.type, p.name);
-    broadcastToPeers({ type: 'projects-sync', projects: projects.map(x => ({...x})) }, null);
+    broadcastToPeers({ type: 'projects-sync', projects: projectSvc.getShareableProjects() }, null);
     projectSvc.saveProjects();
   });
   socket.on('project-add-item', ({ projectId, itemType, itemName, customTypeName }) => {
@@ -1292,7 +1319,7 @@ io.on('connection', (socket) => {
     p.updatedAt = Date.now();
     projectSvc.saveProjects();
     io.emit('project-item-added', { projectId, item });
-    broadcastToPeers({ type: 'projects-sync', projects: projects.map(x => ({...x})) }, null);
+    broadcastToPeers({ type: 'projects-sync', projects: projectSvc.getShareableProjects() }, null);
     addLog(socket.id, socket.userName, 'added item', p.type, p.name + ' → ' + item.name);
   });
   socket.on('project-remove-item', ({ projectId, itemId }) => {
@@ -1303,7 +1330,7 @@ io.on('connection', (socket) => {
     p.updatedAt = Date.now();
     projectSvc.saveProjects();
     io.emit('project-item-removed', { projectId, itemId });
-    broadcastToPeers({ type: 'projects-sync', projects: projects.map(x => ({...x})) }, null);
+    broadcastToPeers({ type: 'projects-sync', projects: projectSvc.getShareableProjects() }, null);
     addLog(socket.id, socket.userName, 'removed item', p.type, p.name);
   });
   socket.on('project-create-batch', (data) => {
@@ -1322,7 +1349,7 @@ io.on('connection', (socket) => {
       created.push(child);
       folder.data.children.push(child.id);
     });
-    broadcastToPeers({ type: 'projects-sync', projects: projects.map(x => ({...x})) }, null);
+    broadcastToPeers({ type: 'projects-sync', projects: projectSvc.getShareableProjects() }, null);
     projectSvc.saveProjects();
   });
 
@@ -1346,7 +1373,7 @@ io.on('connection', (socket) => {
     p._version = (p._version || 0) + 1;
     projectSvc.saveProjects();
     broadcastProjectUpdateToAll(p.id, socket.id);
-    broadcastToPeers({ type: 'projects-sync', projects: projects.map(x => ({...x})) }, null);
+    broadcastToPeers({ type: 'projects-sync', projects: projectSvc.getShareableProjects() }, null);
     addLog(socket.id, socket.userName, 'renamed', p.type, name);
   });
 
@@ -1366,7 +1393,7 @@ io.on('connection', (socket) => {
     p.updatedAt = Date.now();
     projectSvc.saveProjects();
     io.emit('project-item-added', { projectId, item });
-    broadcastToPeers({ type: 'projects-sync', projects: projects.map(x => ({...x})) }, null);
+    broadcastToPeers({ type: 'projects-sync', projects: projectSvc.getShareableProjects() }, null);
     addLog(socket.id, socket.userName, 'renamed item', p.type, name);
   });
 
@@ -1396,7 +1423,7 @@ io.on('connection', (socket) => {
     addLog(socket.id, socket.userName || SERVER_NAME, 'updated', p.type, p.name);
     // 记录操作历史（用于撤回）
     pushProjectOp(p.id, socket.userName, 'update', before, JSON.parse(JSON.stringify(p.data || {})));
-    broadcastToPeers({ type: 'projects-sync', projects: projects.map(x => ({...x})) }, null);
+    broadcastToPeers({ type: 'projects-sync', projects: projectSvc.getShareableProjects() }, null);
     projectSvc.saveProjects();
   });
   socket.on('project-delete', (id) => {
@@ -1410,7 +1437,7 @@ io.on('connection', (socket) => {
     p.deleted = true; p.deletedAt = Date.now();
     socket.emit('project-deleted', id);
     addLog(socket.id, socket.userName || SERVER_NAME, 'deleted', p.type, p.name);
-    broadcastToPeers({ type: 'projects-sync', projects: projects.map(x => ({...x})) }, null);
+    broadcastToPeers({ type: 'projects-sync', projects: projectSvc.getShareableProjects() }, null);
     projectSvc.saveProjects();
   });
   socket.on('project-restore', (id) => {
@@ -1419,7 +1446,7 @@ io.on('connection', (socket) => {
     p.deleted = false; delete p.deletedAt;
     socket.emit('project-restored', id);
     addLog(socket.id, socket.userName || SERVER_NAME, 'restored', p.type, p.name);
-    broadcastToPeers({ type: 'projects-sync', projects: projects.map(x => ({...x})) }, null);
+    broadcastToPeers({ type: 'projects-sync', projects: projectSvc.getShareableProjects() }, null);
     projectSvc.saveProjects();
   });
   socket.on('project-permanent-delete', (id) => {
@@ -1440,7 +1467,7 @@ io.on('connection', (socket) => {
     console.log('永久删除成功:', id, p.name);
     socket.emit('project-permanently-deleted', id);
     if (p) addLog(socket.id, socket.userName || SERVER_NAME, 'permanently deleted', p.type, p.name);
-    broadcastToPeers({ type: 'projects-sync', projects: projects.map(x => ({...x})) }, null);
+    broadcastToPeers({ type: 'projects-sync', projects: projectSvc.getShareableProjects() }, null);
     projectSvc.saveProjects();
   });
   socket.on('project-transfer', ({ ids, targetServerId }) => {
@@ -1980,6 +2007,10 @@ io.on('connection', (socket) => {
       toKick.forEach(sid => viewers.delete(sid));
       if (viewers.size === 0) projectViewers.delete(projectId);
     }
+    // ⚡ 局域网同步：公开项目可见性变更后通知对端
+    if (visibility !== 'private') {
+      broadcastToPeers({ type: 'projects-sync', projects: projectSvc.getShareableProjects() }, null);
+    }
   });
 
   // ── 操作撤回/恢复 ──
@@ -2209,7 +2240,9 @@ function handleBridgeMessage(fromId, msg) {
       case 'projects-sync':
         // 记录合并前的项目ID，用于判断哪些是新项目
         const localIdsBefore = new Set(projects.map(p => p.id));
-        projectSvc.mergeProjects(msg.projects);
+        const peer = peers.get(fromId);
+        const source = peer ? { serverId: fromId, serverName: peer.name } : { serverId: fromId };
+        projectSvc.mergeProjects(msg.projects, source);
         // 批量通知：每个socket一次性收到所有有权限的变更（比逐项目逐socket更省流量）
         const newProjectsMap = {};  // socketId → projects[]
         const updateProjectsMap = {}; // socketId → projects[]
@@ -2221,11 +2254,13 @@ function handleBridgeMessage(fromId, msg) {
             if (!filtered.length) continue;
             if (isNew) {
               if (!newProjectsMap[sid]) newProjectsMap[sid] = [];
-              newProjectsMap[sid].push(rp);
+              // 从本地读取，确保包含 syncedFrom 标记
+              const localNew = projects.find(x => x.id === rp.id);
+              newProjectsMap[sid].push(localNew || rp);
             } else {
               if (!updateProjectsMap[sid]) updateProjectsMap[sid] = [];
               const p = projects.find(x => x.id === rp.id);
-              if (p) updateProjectsMap[sid].push({ id: p.id, name: p.name, data: p.data, updatedAt: p.updatedAt });
+              if (p) updateProjectsMap[sid].push({ id: p.id, name: p.name, data: p.data, updatedAt: p.updatedAt, syncedFrom: p.syncedFrom });
             }
           }
         });
@@ -2633,7 +2668,7 @@ function connectToPeer(serverId, name, ip, port) {
       clearTimeout(ex.reconnectTimer);
       ex.socket = sock; ex.connected = true; ex.reconnectTimer = null;
       broadcastPeers();
-      sendToPeer(realServerId, { type: 'projects-sync', projects: projects.map(x => ({...x})) });
+      sendToPeer(realServerId, { type: 'projects-sync', projects: projectSvc.getShareableProjects() });
       sock.on('bridge-msg', (msg) => handleBridgeMessage(realServerId, msg));
       sock.on('disconnect', () => handlePeerDisconnect(realServerId));
       return;
@@ -2643,7 +2678,7 @@ function connectToPeer(serverId, name, ip, port) {
     if (tempId !== realServerId) peers.delete(tempId);
     console.log(`[桥接] 握手完成，已加入 ${data.name}`);
     foundPeer();
-    sendToPeer(realServerId, { type: 'projects-sync', projects: projects.map(x => ({...x})) });
+    sendToPeer(realServerId, { type: 'projects-sync', projects: projectSvc.getShareableProjects() });
     broadcastPeers();
     sock.on('bridge-msg', (msg) => handleBridgeMessage(realServerId, msg));
     sock.on('disconnect', () => handlePeerDisconnect(realServerId));

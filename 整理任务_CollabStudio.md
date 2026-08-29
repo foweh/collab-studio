@@ -28,12 +28,14 @@ Collab Studio 是一个"创作协作全家桶":剧本/故事/导图/分镜实时
 ## P0 — 安全与隐私(必须立即修复)
 
 ### P0-1:统一同步过滤
-- 状态:[ ]
+- 状态:[x]
 - 问题:installer 版 13 处全量发送私有项目;main 版出站 `connectToPeer` 2 处也存在同样问题
 - 涉及文件:`server.js`(main 版 2671/2681 行)、`installer/app/server.js`(13 处)
 - 修复:将 `projects.map(x => ({...x}))` 改为 `projectSvc.getShareableProjects()`
 - 预期结果:同步广播只包含公开项目,私有项目不再出现在网络中
-- 验收:grep 三份文件确认所有 `projects-sync` 广播均用 `getShareableProjects()`
+- 验收:grep 三份文件确认所有 `projects-sync` 广播均用 `getShareableProjects()`(✅ main 2 处 + installer 14 处已替换,残留 0)
+- 测试:冒烟通过 — 私有项目对他人不可见,public-read 项目可见,更新后私有项目仍被过滤
+- 备注:顺带发现 `project-create` 硬编码 `visibility:'private'`,传入的 visibility 被忽略(记录待后续处理)
 
 ### P0-2:`project-restore` 补权限校验
 - 状态:[ ]
@@ -161,7 +163,7 @@ Collab Studio 是一个"创作协作全家桶":剧本/故事/导图/分镜实时
 
 | 编号 | 状态 | Commit | 说明 |
 |------|------|--------|------|
-| P0-1 | [ ] | - | - |
+| P0-1 | [x] | - | - |
 | P0-2 | [ ] | - | - |
 | P0-3 | [ ] | - | - |
 | P0-4 | [ ] | - | - |
