@@ -2790,7 +2790,7 @@ function startServer(port) {
   console.log('║  多台电脑打开页面 → 开启局域网          ║');
   console.log('║  自动发现并组建协作网络                  ║');
   console.log('╠══════════════════════════════════════════╣');
-  console.log('║  👑 管理员: 热合曼                        ║');
+  console.log('║  👑 管理员: ' + (ADMIN_USERNAME + '                    ').slice(0, 30) + '║');
   console.log('║  🔑 密码: 已设置（登录页输入）            ║');
   console.log('║  💡 登录后可在右侧面板修改密码           ║');
   console.log('╚══════════════════════════════════════════╝');
