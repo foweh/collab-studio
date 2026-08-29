@@ -235,27 +235,51 @@ function autoLayout() {
     n.textWidth = measureText(n.text || '节点');
     n.width = Math.max(NODE_MIN_W, n.textWidth + NODE_PAD * 2);
     n.height = NODE_H;
+    delete n._subH; // 清高度缓存
   });
 
   function nodeEffectiveH(n) { return getNodeEffectiveHeight(n); }
 
-  // 递归计算子树布局
-  function layoutSubtree(nodeId, x) {
+  // ── 第一遍: 自底向上计算子树总高(缓存到 node._subH) ──
+  // _subH = 该节点自身 + 全部子孙占用的总高度(不含父为其预留的间距)
+  function calcSubtreeH(nodeId) {
     const node = nodes.find(n => n.id === nodeId);
-    if (!node) return { totalH: 0 };
+    if (!node) return 0;
+    if (node._subH !== undefined) return node._subH;
     const effH = nodeEffectiveH(node);
-    if (node.collapsed) return { totalH: effH + VERT_GAP };
+    if (node.collapsed) { node._subH = effH; return node._subH; }
     const children = getChildren(nodeId);
-    if (children.length === 0) return { totalH: effH + VERT_GAP };
-    const results = children.map(c => layoutSubtree(c.id, x + LEVEL_GAP + node.width));
-    const totalH = results.reduce((sum, r) => sum + r.totalH, 0);
-    let yOff = -totalH / 2;
+    if (children.length === 0) { node._subH = effH; return node._subH; }
+    // 子节点并排: Σ 子树高 + (n-1)个间距
+    let totalH = 0;
+    children.forEach(c => { totalH += calcSubtreeH(c.id); });
+    totalH += (children.length - 1) * VERT_GAP;
+    node._subH = Math.max(totalH, effH);
+    return node._subH;
+  }
+
+  // ── 第二遍: 自顶向下分配绝对位置 ──
+  // topY: 本节点分配槽的顶部(绝对坐标); 父节点顶部对齐槽起点, 子区间从槽起点开始
+  function assignSubtree(nodeId, x, topY) {
+    const node = nodes.find(n => n.id === nodeId);
+    if (!node) return;
+    const effH = nodeEffectiveH(node);
+    node.x = x;
+    node.y = topY + effH / 2; // 节点中心 = 槽顶部 + 自身高/2
+    if (node.collapsed) return;
+    const children = getChildren(nodeId);
+    if (children.length === 0) return;
+    // 子节点区间总高 = Σ 子树高 + (n-1)个间距, 从槽顶部向下排布
+    const childHs = children.map(c => c._subH !== undefined ? c._subH : nodeEffectiveH(c));
+    const totalH = childHs.reduce((s, h) => s + h, 0) + (children.length - 1) * VERT_GAP;
+    let yOff = topY;
     children.forEach((c, i) => {
-      c.x = x + LEVEL_GAP + (node.width / 2);
-      c.y = yOff + results[i].totalH / 2 - nodeEffectiveH(c) / 2;
-      yOff += results[i].totalH;
+      c.x = x + LEVEL_GAP + node.width;
+      // 子节点自身中心 = 其子树区间起点 + 子树高/2 - 节点自身高/2
+      c.y = yOff + childHs[i] / 2 - nodeEffectiveH(c) / 2;
+      assignSubtree(c.id, c.x, yOff); // 子节点槽顶部 = 其区间起点
+      yOff += childHs[i] + VERT_GAP;
     });
-    return { totalH: Math.max(totalH, nodeEffectiveH(node) + VERT_GAP) };
   }
 
   // 布局每个根节点（纵向排列多个根）
@@ -263,8 +287,10 @@ function autoLayout() {
   roots.forEach((root, ri) => {
     root.x = 60 + ri * 30;
     root.y = rootY;
-    const result = layoutSubtree(root.id, root.x);
-    rootY += result.totalH + 20; // 每个根子树之间留 20px 间距
+    calcSubtreeH(root.id);
+    // 根节点槽顶部 = 中心 - 自身高/2
+    assignSubtree(root.id, root.x, rootY - nodeEffectiveH(root) / 2);
+    rootY += (root._subH || nodeEffectiveH(root)) + 20; // 每个根子树之间留 20px 间距
   });
 
   // 整体居中
