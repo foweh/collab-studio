@@ -654,6 +654,16 @@ app.get('/api/capcut/status', async (req, res) => {
   }
 });
 
+// POST /api/capcut/install-path — 设置剪映安装路径（可选，持久化到 capcut-mate.json）
+app.post('/api/capcut/install-path', (req, res) => {
+  const { installPath } = req.body || {};
+  if (!installPath || typeof installPath !== 'string' || installPath.length > 500) {
+    return res.status(400).json({ error: 'installPath 必填（字符串，≤500 字符）' });
+  }
+  const ok = capcutMate.setInstallPath(installPath);
+  res.json(ok ? { ok: true, installPath: capcutMate.installPath } : { error: '路径无效' });
+});
+
 // POST /api/capcut/scan — 触发端口扫描
 app.post('/api/capcut/scan', async (req, res) => {
   try {

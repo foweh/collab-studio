@@ -123,12 +123,12 @@ Collab Studio 是一个"创作协作全家桶":剧本/故事/导图/分镜实时
 - 结果:✅ 脚本已创建并实测生成证书成功(openssl 自签,含 SAN,10 年有效期);server.js SSL 加载验证通过;`ssl/` 已加入 .gitignore;README HTTPS 章节在 P2-15 统一补充
 
 ### P2-11:剪映安装路径可配置
-- 状态:[ ]
+- 状态:[x]
 - 问题:`D:\JianyingPro\CapCut.exe` 硬编码,非 D 盘/自定义安装找不到
 - 涉及文件:`services/capcut-mate.js`
 - 修复:`capcut-mate.json` 支持 `installPath` 配置,自动探测兜底
 - 预期结果:可配置剪映路径
-- 验收:配置 installPath 后 `_findInstallPath` 优先返回该路径
+- 验收:配置 installPath 后 `_findInstallPath` 优先返回该路径(✅ 冒烟测试:设置/持久化/重启恢复全部通过;新增 `POST /api/capcut/install-path` 端点;顺带修复 `_saveConfig` 仅在 port>0 时保存导致 installPath 无法独立落盘的问题)
 
 ### P2-12:白板持久化
 - 状态:[ ]
@@ -178,7 +178,7 @@ Collab Studio 是一个"创作协作全家桶":剧本/故事/导图/分镜实时
 | P1-8 | [x] | - | - |
 | P1-9 | [x] | - | - |
 | P2-10 | [x] | - | - |
-| P2-11 | [ ] | - | - |
+| P2-11 | [x] | - | - |
 | P2-12 | [ ] | - | - |
 | P2-13 | [ ] | - | - |
 | P2-14 | [ ] | - | - |

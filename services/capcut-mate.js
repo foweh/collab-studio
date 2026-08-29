@@ -51,6 +51,7 @@ class CapCutMateClient {
     this._lastError = null;
     this._scanPorts = opts.scanPorts || DEFAULT_SCAN_PORTS;
     this._mockMode = opts.mockMode !== false;
+    this._installPath = null; // 用户配置的剪映安装路径（可选）
 
     // 从持久化文件恢复上次的端口配置
     this._loadConfig();
@@ -106,7 +107,7 @@ class CapCutMateClient {
   async getFullStatus() {
     const result = {
       capcutProcess: this._isProcessRunning(),
-      capcutPath: this._findInstallPath(),
+      capcutPath: this.installPath, // getter：配置优先，其次自动探测
       matePort: this._port || null,
       mateReachable: false,
       mateDraftUrl: null,
@@ -641,6 +642,9 @@ class CapCutMateClient {
 
   /** 探测 CapCut 安装路径 */
   _findInstallPath() {
+    // 用户配置优先（data/capcut-mate.json 的 installPath）
+    if (this._installPath && fs.existsSync(this._installPath)) return this._installPath;
+
     const candidates = [
       'D:\\JianyingPro\\CapCut.exe',
       'D:\\JianyingPro\\JianyingPro.exe',
@@ -698,14 +702,30 @@ class CapCutMateClient {
       this._https = !!saved.https;
       console.log(`[capcut-mate] 从持久化恢复端口: ${this._https ? 'https' : 'http'}://127.0.0.1:${this._port}`);
     }
+    // 恢复用户配置的剪映安装路径
+    if (saved.installPath && typeof saved.installPath === 'string') {
+      this._installPath = saved.installPath;
+      console.log(`[capcut-mate] 从持久化恢复剪映路径: ${this._installPath}`);
+    }
   }
 
   /** 持久化当前端口配置 */
   _saveConfig() {
-    if (this._port > 0) {
-      saveJSON(CONFIG_FILE, { port: this._port, https: this._https });
-    }
+    saveJSON(CONFIG_FILE, { port: this._port || undefined, https: this._https, installPath: this._installPath || undefined });
   }
+
+  /** 设置剪映安装路径（可选，设置面板调用后持久化） */
+  setInstallPath(installPath) {
+    if (installPath && typeof installPath === 'string' && installPath.trim()) {
+      this._installPath = installPath.trim();
+      this._saveConfig();
+      return true;
+    }
+    return false;
+  }
+
+  /** 获取剪映安装路径（配置优先，其次自动探测） */
+  get installPath() { return this._installPath || this._findInstallPath(); }
 }
 
 // ─── 单例 ───────────────────────────────────────────
