@@ -923,14 +923,20 @@ app.get('/api/auth-check', async (req, res) => {
 });
 
 // ─── 白板前端（Vue 3 新前端） ────────────────────────────
-const STUDIO_VUE_DIST = path.join(__dirname, '..', 'studio-vue', 'dist');
+// 优先项目内 dist(独立部署), 回退仓库上级目录(开发布局)
+function resolveDist(rel) {
+  const inside = path.join(__dirname, rel);
+  const outside = path.join(__dirname, '..', rel);
+  return fs.existsSync(path.join(inside, 'index.html')) ? inside : outside;
+}
+const STUDIO_VUE_DIST = resolveDist('studio-vue/dist');
 app.use('/studio', express.static(STUDIO_VUE_DIST));
 app.get('/studio/*', (req, res) => {
   res.sendFile(path.join(STUDIO_VUE_DIST, 'index.html'));
 });
 
 // ─── 分镜工具（fenjing-local） ──────────────────────────
-const FENJING_LOCAL_DIST = path.join(__dirname, '..', 'fenjing-local', 'dist');
+const FENJING_LOCAL_DIST = resolveDist('fenjing-local/dist');
 app.use('/storyboard', express.static(FENJING_LOCAL_DIST));
 app.get('/storyboard/*', (req, res) => {
   res.sendFile(path.join(FENJING_LOCAL_DIST, 'index.html'));
