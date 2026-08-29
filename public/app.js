@@ -1107,11 +1107,18 @@ function updateDeptWorkspace() {
   // 快捷按钮: 新建分镜项目(传媒编导部等视频类部门)
   const btnSb = document.getElementById('dept-create-storyboard');
   const btnAi = document.getElementById('dept-ai-outline');
+  const btnMat = document.getElementById('dept-materials-btn');
+  const btnDev = document.getElementById('dept-devices-btn');
   const videoDepts = ['media-directing', 'multimedia'];
   if (btnSb) btnSb.style.display = videoDepts.includes(myDepartmentId) ? '' : 'none';
   if (btnAi) btnAi.style.display = videoDepts.includes(myDepartmentId) ? '' : 'none';
+  // 素材库: 所有部门可用; 设备管理: 仅传媒/多媒体
+  if (btnMat) btnMat.style.display = myDepartmentId ? '' : 'none';
+  if (btnDev) btnDev.style.display = videoDepts.includes(myDepartmentId) ? '' : 'none';
   if (btnSb) btnSb.onclick = () => createDeptProject('storyboard');
   if (btnAi) btnAi.onclick = () => openAiOutlineDialog();
+  if (btnMat) btnMat.onclick = () => openDeptSubview('materials');
+  if (btnDev) btnDev.onclick = () => openDeptSubview('devices');
 }
 
 // 部门内新建项目(自动挂本部门, 后端处理归属)
@@ -1132,6 +1139,245 @@ function openAiOutlineDialog() {
     if (data.error) { alert('AI 生成失败: ' + data.error); return; }
     alert((data.reply || '') + '\n\n(可复制到思维导图或分镜项目中细化)');
   }).catch(e => alert('请求失败: ' + e.message));
+}
+
+// ─── 部门子视图(素材库/设备管理, 阶段二) ────────────────
+let deptSubviewType = null;
+
+function openDeptSubview(type) {
+  deptSubviewType = type;
+  const subview = document.getElementById('dept-subview');
+  const title = document.getElementById('dept-subview-title');
+  const actions = document.getElementById('dept-subview-actions');
+  if (!subview || !title || !actions) return;
+  subview.style.display = '';
+  actions.innerHTML = '';
+  const backBtn = document.getElementById('dept-subview-back');
+  if (backBtn) backBtn.onclick = closeDeptSubview;
+  if (type === 'materials') {
+    title.textContent = '📁 素材库';
+    // 上传按钮(部长/副部长/站长)
+    if (['leader', 'vice'].includes(myDeptRole) || isAdmin) {
+      const upBtn = document.createElement('button');
+      upBtn.className = 'toolbar-btn';
+      upBtn.textContent = '⬆️ 上传素材';
+      upBtn.style.fontSize = '12px';
+      upBtn.onclick = uploadMaterial;
+      actions.appendChild(upBtn);
+    }
+    renderMaterials();
+  } else if (type === 'devices') {
+    title.textContent = '📦 设备管理';
+    if (['leader', 'vice'].includes(myDeptRole) || isAdmin) {
+      const addBtn = document.createElement('button');
+      addBtn.className = 'toolbar-btn';
+      addBtn.textContent = '➕ 新增设备';
+      addBtn.style.fontSize = '12px';
+      addBtn.onclick = addDeviceForm;
+      actions.appendChild(addBtn);
+    }
+    renderDevices();
+  }
+}
+
+function closeDeptSubview() {
+  deptSubviewType = null;
+  const subview = document.getElementById('dept-subview');
+  if (subview) subview.style.display = 'none';
+}
+
+function apiUser() { return '?user=' + encodeURIComponent(myName); }
+
+// ─── 素材库 ───────────────────────────────────────────
+function renderMaterials() {
+  const content = document.getElementById('dept-subview-content');
+  if (!content) return;
+  content.innerHTML = '<div style="color:var(--text-dim);padding:20px">加载中...</div>';
+  fetch('/api/materials' + apiUser()).then(r => r.json()).then(data => {
+    if (!data.ok) { content.innerHTML = '<div style="color:#ef4444">' + (data.error || '加载失败') + '</div>'; return; }
+    const mats = data.materials || [];
+    if (mats.length === 0) {
+      content.innerHTML = '<div style="color:var(--text-dim);padding:20px">暂无素材,部长/副部长可上传</div>';
+      return;
+    }
+    content.innerHTML = '<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:10px">' + mats.map(m => `
+      <div style="border:1px solid var(--border);border-radius:10px;padding:10px;background:var(--card-bg)">
+        <div style="font-weight:600;font-size:13px;margin-bottom:4px;word-break:break-all">${esc(m.name)}</div>
+        <div style="font-size:11px;color:var(--text-dim);margin-bottom:6px">${esc(m.category || '')} · ${fmtSize(m.fileSize)}</div>
+        <div style="font-size:11px;color:var(--text-dim);margin-bottom:6px">上传: ${esc(m.uploadedBy)} · 下载 ${m.downloadCount || 0} 次</div>
+        <div style="display:flex;gap:6px;flex-wrap:wrap">
+          <button class="tool-btn" onclick="downloadMaterial('${m.id}')">⬇ 下载</button>
+          ${(['leader','vice'].includes(myDeptRole) || isAdmin) ? `<button class="tool-btn" onclick="editMaterial('${m.id}')">✏️ 编辑</button>` : ''}
+          ${(myDeptRole === 'leader' || isAdmin) ? `<button class="tool-btn danger" onclick="deleteMaterial('${m.id}')">🗑 删除</button>` : ''}
+        </div>
+      </div>`).join('') + '</div>';
+  }).catch(e => { content.innerHTML = '<div style="color:#ef4444">加载失败: ' + e.message + '</div>'; });
+}
+
+function fmtSize(bytes) {
+  if (!bytes) return '0B';
+  const mb = bytes / 1048576;
+  if (mb >= 1) return mb.toFixed(1) + 'MB';
+  return Math.round(bytes / 1024) + 'KB';
+}
+
+function uploadMaterial() {
+  const input = document.createElement('input');
+  input.type = 'file';
+  input.onchange = () => {
+    const file = input.files[0];
+    if (!file) return;
+    if (file.size > 50 * 1024 * 1024) { alert('文件超过 50MB 限制'); return; }
+    const name = prompt('素材名称:', file.name);
+    const category = prompt('分类(视频素材/图片素材/设计源文件/文档模板/音频素材/其他):', '其他') || '其他';
+    const tags = prompt('标签(逗号分隔,可留空):', '') || '';
+    const fd = new FormData();
+    fd.append('file', file);
+    fd.append('name', name || file.name);
+    fd.append('category', category);
+    fd.append('tags', tags);
+    fetch('/api/materials/upload' + apiUser(), { method: 'POST', body: fd })
+      .then(r => r.json()).then(data => {
+        if (data.ok) { alert('✅ 上传成功'); renderMaterials(); }
+        else alert('❌ ' + (data.error || '上传失败'));
+      }).catch(e => alert('❌ ' + e.message));
+  };
+  input.click();
+}
+
+function downloadMaterial(id) {
+  fetch('/api/materials/' + id + '/download' + apiUser(), { method: 'POST' })
+    .then(r => r.json()).then(data => {
+      if (data.ok && data.url) {
+        window.open(data.url, '_blank');
+        renderMaterials();
+      } else alert('❌ ' + (data.error || '下载失败'));
+    }).catch(e => alert('❌ ' + e.message));
+}
+
+function editMaterial(id) {
+  const name = prompt('新名称:');
+  if (name === null) return;
+  fetch('/api/materials/' + id + apiUser(), {
+    method: 'PUT', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ name }),
+  }).then(r => r.json()).then(data => {
+    if (data.ok) { alert('✅ 已更新'); renderMaterials(); }
+    else alert('❌ ' + (data.error || '更新失败'));
+  });
+}
+
+function deleteMaterial(id) {
+  if (!confirm('确定删除该素材?')) return;
+  fetch('/api/materials/' + id + apiUser(), { method: 'DELETE' })
+    .then(r => r.json()).then(data => {
+      if (data.ok) { alert('✅ 已删除'); renderMaterials(); }
+      else alert('❌ ' + (data.error || '删除失败'));
+    }).catch(e => alert('❌ ' + e.message));
+}
+
+// ─── 设备管理 ─────────────────────────────────────────
+function renderDevices() {
+  const content = document.getElementById('dept-subview-content');
+  if (!content) return;
+  content.innerHTML = '<div style="color:var(--text-dim);padding:20px">加载中...</div>';
+  fetch('/api/devices' + apiUser()).then(r => r.json()).then(data => {
+    if (!data.ok) { content.innerHTML = '<div style="color:#ef4444">' + (data.error || '加载失败') + '</div>'; return; }
+    const devs = data.devices || [];
+    if (devs.length === 0) {
+      content.innerHTML = '<div style="color:var(--text-dim);padding:20px">暂无设备,部长/副部长可新增</div>';
+      return;
+    }
+    const statusMap = { available: '🟢 在库', borrowed: '🔴 已借出', maintenance: '🟡 维护中' };
+    content.innerHTML = '<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(230px,1fr));gap:10px">' + devs.map(d => `
+      <div style="border:1px solid var(--border);border-radius:10px;padding:10px;background:var(--card-bg)">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px">
+          <strong style="font-size:13px">${esc(d.name)}</strong>
+          <span style="font-size:11px">${statusMap[d.status] || d.status}</span>
+        </div>
+        <div style="font-size:11px;color:var(--text-dim);margin-bottom:2px">${esc(d.type || '')}${d.model ? ' · ' + esc(d.model) : ''}</div>
+        <div style="font-size:11px;color:var(--text-dim);margin-bottom:6px">${d.status === 'borrowed' && d.borrowedBy ? '借用人: ' + esc(d.borrowedBy) : (d.serialNumber ? 'SN: ' + esc(d.serialNumber) : '')}</div>
+        <div style="display:flex;gap:6px;flex-wrap:wrap">
+          ${d.status === 'available' ? `<button class="tool-btn" onclick="borrowDevice('${d.id}')">📤 借用</button>` : ''}
+          ${d.status === 'borrowed' && d.borrowedBy === myName ? `<button class="tool-btn" onclick="returnDevice('${d.id}')">📥 归还</button>` : ''}
+          ${(['leader','vice'].includes(myDeptRole) || isAdmin) ? `<button class="tool-btn" onclick="editDevice('${d.id}')">✏️ 编辑</button>` : ''}
+          ${(myDeptRole === 'leader' || isAdmin) ? `<button class="tool-btn danger" onclick="deleteDevice('${d.id}')">🗑</button>` : ''}
+          ${(myDeptRole === 'leader' || isAdmin) && d.status !== 'borrowed' ? `<button class="tool-btn" onclick="toggleDeviceStatus('${d.id}')">${d.status === 'maintenance' ? '✅ 启用' : '🔧 维护'}</button>` : ''}
+        </div>
+      </div>`).join('') + '</div>';
+  }).catch(e => { content.innerHTML = '<div style="color:#ef4444">加载失败: ' + e.message + '</div>'; });
+}
+
+function addDeviceForm() {
+  const name = prompt('设备名称:');
+  if (!name) return;
+  const type = prompt('类型(摄像机/三脚架/补光灯/收音设备/无人机/稳定器/相机):', '摄像机') || '摄像机';
+  const model = prompt('型号(可留空):', '') || '';
+  const serialNumber = prompt('序列号(可留空):', '') || '';
+  fetch('/api/devices' + apiUser(), {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ name, type, model, serialNumber }),
+  }).then(r => r.json()).then(data => {
+    if (data.ok) { alert('✅ 设备已新增'); renderDevices(); }
+    else alert('❌ ' + (data.error || '新增失败'));
+  }).catch(e => alert('❌ ' + e.message));
+}
+
+function editDevice(id) {
+  const name = prompt('新名称:');
+  if (name === null) return;
+  fetch('/api/devices/' + id + apiUser(), {
+    method: 'PUT', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ name }),
+  }).then(r => r.json()).then(data => {
+    if (data.ok) { alert('✅ 已更新'); renderDevices(); }
+    else alert('❌ ' + (data.error || '更新失败'));
+  });
+}
+
+function deleteDevice(id) {
+  if (!confirm('确定删除该设备?')) return;
+  fetch('/api/devices/' + id + apiUser(), { method: 'DELETE' })
+    .then(r => r.json()).then(data => {
+      if (data.ok) { alert('✅ 已删除'); renderDevices(); }
+      else alert('❌ ' + (data.error || '删除失败'));
+    }).catch(e => alert('❌ ' + e.message));
+}
+
+function borrowDevice(id) {
+  const days = prompt('预计归还天数(默认3):', '3');
+  if (days === null) return;
+  const expectedReturnAt = new Date(Date.now() + (parseInt(days) || 3) * 86400000).toISOString();
+  fetch('/api/devices/' + id + '/borrow' + apiUser(), {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ expectedReturnAt }),
+  }).then(r => r.json()).then(data => {
+    if (data.ok) { alert('✅ 借用成功'); renderDevices(); }
+    else alert('❌ ' + (data.error || '借用失败'));
+  }).catch(e => alert('❌ ' + e.message));
+}
+
+function returnDevice(id) {
+  if (!confirm('确认归还?')) return;
+  fetch('/api/devices/' + id + '/return' + apiUser(), { method: 'POST' })
+    .then(r => r.json()).then(data => {
+      if (data.ok) { alert('✅ 已归还'); renderDevices(); }
+      else alert('❌ ' + (data.error || '归还失败'));
+    }).catch(e => alert('❌ ' + e.message));
+}
+
+function toggleDeviceStatus(id) {
+  fetch('/api/devices/' + id + apiUser()).then(r => r.json()).then(d => {
+    if (!d.ok || !d.device) return;
+    const next = d.device.status === 'maintenance' ? 'available' : 'maintenance';
+    fetch('/api/devices/' + id + '/status' + apiUser(), {
+      method: 'PUT', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ status: next }),
+    }).then(r => r.json()).then(data => {
+      if (data.ok) { alert('✅ 状态已更新'); renderDevices(); }
+      else alert('❌ ' + (data.error || '操作失败'));
+    });
+  }).catch(e => alert('❌ ' + e.message));
 }
 
 let myGroups = []; // user's groups

@@ -97,7 +97,17 @@
               <span id="dept-ws-desc" style="font-size:12px;color:var(--text-dim);flex:1"></span>
               <button class="toolbar-btn" id="dept-create-storyboard" title="新建分镜项目" style="font-size:13px">🎬 新建分镜</button>
               <button class="toolbar-btn" id="dept-ai-outline" title="AI 生成分镜框架" style="font-size:13px">🤖 AI 分镜框架</button>
+              <button class="toolbar-btn" id="dept-materials-btn" title="素材库" style="font-size:13px">📁 素材库</button>
+              <button class="toolbar-btn" id="dept-devices-btn" title="设备管理" style="font-size:13px">📦 设备</button>
             </div>
+          </div>
+          <div id="dept-subview" style="display:none;padding:12px 16px;border-bottom:1px solid var(--border);background:var(--bg)">
+            <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px;flex-wrap:wrap">
+              <button class="toolbar-btn" id="dept-subview-back" style="font-size:12px">← 返回工作台</button>
+              <span id="dept-subview-title" style="font-size:14px;font-weight:600;flex:1"></span>
+              <span id="dept-subview-actions" style="display:flex;gap:6px"></span>
+            </div>
+            <div id="dept-subview-content" style="max-height:60vh;overflow-y:auto"></div>
           </div>
           <div id="breadcrumb" class="breadcrumb" style="display:none;padding:8px 16px;border-bottom:1px solid var(--border);flex-wrap:wrap;gap:8px;align-items:center"></div>
           <div id="project-list" class="project-grid"></div>
