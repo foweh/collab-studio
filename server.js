@@ -25,6 +25,7 @@ const { ensureDataDir, loadJSON, saveJSON, DATA_DIR } = require('./utils/persist
 const { checkRateLimit } = require('./utils/ratelimit');
 const auth = require('./services/auth');
 const projectSvc = require('./services/project');
+const deptSvc = require('./services/department');
 const logger = require('./services/logger');
 const annotationSvc = require('./services/annotation');
 const { getCapCutMateClient } = require('./services/capcut-mate');
@@ -1995,6 +1996,75 @@ io.on('connection', (socket) => {
       onlineUsers: onlineUsers.size, peers: peers.size,
       projects: projects.length, logCount: operationLog.length,
     });
+  });
+
+  // ── 部门管理(部门化改造) ──
+  // 部门列表(所有登录用户可查, 用于展示部门名)
+  socket.on('dept-list', () => {
+    if (!socket.userName) return;
+    socket.emit('dept-list-result', deptSvc.listDepartments());
+  });
+
+  // 分配用户到部门(仅 admin/站长)
+  socket.on('dept-assign-user', ({ targetName, departmentId, deptRole }) => {
+    if (!socket.isAdmin) return;
+    if (!validateString(targetName, MAX_NAME_LEN)) return;
+    if (departmentId && !deptSvc.isValidDepartmentId(departmentId)) return;
+    if (deptRole && !deptSvc.isValidDeptRole(deptRole)) return;
+    const target = users[targetName];
+    if (!target) return;
+    // 站长不可被分配(始终全局)
+    if (target.isAdmin) { socket.emit('dept-error', '不能给站长分配部门'); return; }
+    const ok = deptSvc.assignUserToDept(target, departmentId || null, deptRole || null);
+    if (ok) {
+      auth.saveUsers();
+      // 通知目标用户(在线时)
+      for (const [sid, u] of onlineUsers) {
+        if (u.name === targetName) io.to(sid).emit('dept-changed', { departmentId: target.departmentId, deptRole: target.deptRole });
+      }
+      addLog(socket.id, socket.userName, 'assigned dept', 'system', `${targetName} → ${departmentId || '无'}/${deptRole || '无'}`);
+      socket.emit('dept-assign-result', { ok: true, targetName, departmentId: target.departmentId, deptRole: target.deptRole });
+    } else {
+      socket.emit('dept-error', '分配失败');
+    }
+  });
+
+  // 部门成员列表(仅 admin)
+  socket.on('dept-users', ({ departmentId } = {}) => {
+    if (!socket.isAdmin) return;
+    if (departmentId && !deptSvc.isValidDepartmentId(departmentId)) return;
+    // 全部门成员或指定部门
+    const result = deptSvc.listDepartments().map(d => ({
+      ...d,
+      members: deptSvc.getDeptMembers(users, d.id),
+    }));
+    socket.emit('dept-users-result', departmentId ? result.filter(r => r.id === departmentId) : result);
+  });
+
+  // 我所在部门(前端工作台路由用)
+  socket.on('dept-my', () => {
+    if (!socket.userName) return;
+    const myDeptId = auth.getDepartmentId(socket.userName);
+    socket.emit('dept-my-result', {
+      departmentId: myDeptId,
+      department: myDeptId ? deptSvc.getDepartment(myDeptId) : null,
+      deptRole: auth.getDeptRole(socket.userName),
+      deptRoleLabel: deptSvc.getDeptRoleLabel(auth.getDeptRole(socket.userName)),
+    });
+  });
+
+  // 分配项目给干事(部长/副部长/admin)
+  socket.on('project-assign', ({ projectId, assigneeName }) => {
+    if (!socket.userName) return;
+    const p = projects.find(x => x.id === projectId);
+    if (!p) return;
+    if (!projectSvc.canEditProject(socket.userName, p, auth)) { socket.emit('project-update-error', '你没有编辑权限'); return; }
+    if (assigneeName && !validateString(assigneeName, MAX_NAME_LEN)) return;
+    p.assigneeId = assigneeName || undefined;
+    p.updatedAt = Date.now();
+    projectSvc.saveProjects();
+    socket.emit('project-updated', { id: p.id, name: p.name, data: p.data, updatedAt: p.updatedAt });
+    addLog(socket.id, socket.userName, 'assigned project', p.type, `${p.name} → ${assigneeName || '无'}`);
   });
 
   // ── 批注系统 ──
