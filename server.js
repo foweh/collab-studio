@@ -1293,6 +1293,8 @@ io.on('connection', (socket) => {
       departmentId: users[userName]?.departmentId || null,
       deptRole: users[userName]?.deptRole || null,
     });
+    // 登录成功后重发权限过滤后的项目列表(部门用户据此看到本部门项目)
+    emitFilteredProjects(socket);
   });
 
   socket.on('set-server-name', (name) => {
