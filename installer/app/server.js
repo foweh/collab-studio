@@ -261,6 +261,21 @@ let groupChatHistory = loadJSON(GROUP_CHAT_FILE, {});
 let groupInviteRequests = []; // { id, from, candidate, groupId }
 let groupInviteReqId = 0;
 
+// 待审批请求持久化（重启不丢）：消息权限申请 + 群邀请申请
+const PENDING_REQUESTS_FILE = path.join(DATA_DIR, 'pending-requests.json');
+let msgPermissionRequests = []; // { from, target, time }
+let pendingRequests = loadJSON(PENDING_REQUESTS_FILE, {});
+if (Array.isArray(pendingRequests.msgPermissions)) msgPermissionRequests = pendingRequests.msgPermissions;
+if (Array.isArray(pendingRequests.groupInvites)) groupInviteRequests = pendingRequests.groupInvites;
+if (groupInviteRequests.length) groupInviteReqId = Math.max(...groupInviteRequests.map(r => r.id || 0), 0);
+
+function savePendingRequests() {
+  saveJSON(PENDING_REQUESTS_FILE, {
+    msgPermissions: msgPermissionRequests,
+    groupInvites: groupInviteRequests,
+  });
+}
+
 function saveGroups() { saveJSON(GROUPS_FILE, groups); }
 function saveGroupChat() { saveJSON(GROUP_CHAT_FILE, groupChatHistory); }
 
@@ -1673,12 +1688,12 @@ io.on('connection', (socket) => {
   });
 
   // ── 消息权限申请 ──
-  const msgPermissionRequests = [];
   socket.on('admin-request-msg-permission', ({ targetName }) => {
     if (!validateString(targetName, 50) || !targetName.trim()) return;
     if (!socket.userName) return;
     const req = { from: socket.userName, target: targetName.trim(), time: Date.now() };
     msgPermissionRequests.push(req);
+    savePendingRequests();
     addLog(socket.id, socket.userName, 'request msg permission', 'system', `→ ${targetName}`);
     // 通知所有管理员
     for (const [sid, u] of onlineUsers) {
@@ -1695,7 +1710,7 @@ io.on('connection', (socket) => {
     if (!validateString(from, 50)) return;
     const req = msgPermissionRequests.find(r => r.from === from);
     const idx = msgPermissionRequests.findIndex(r => r.from === from);
-    if (idx >= 0) msgPermissionRequests.splice(idx, 1);
+    if (idx >= 0) { msgPermissionRequests.splice(idx, 1); savePendingRequests(); }
     // 通知申请者
     for (const [sid, u] of onlineUsers) {
       if (u.name === from) {
@@ -2183,6 +2198,7 @@ io.on('connection', (socket) => {
     // 普通成员申请 → 发给群主审批
     const req = { id: ++groupInviteReqId, from: socket.userName, candidate, groupId };
     groupInviteRequests.push(req);
+    savePendingRequests();
     for (const [sid, u] of onlineUsers) {
       if (u.name === g.owner) io.to(sid).emit('group-invite-request', req);
     }
@@ -2194,6 +2210,7 @@ io.on('connection', (socket) => {
     if (idx === -1) return;
     const req = groupInviteRequests[idx];
     groupInviteRequests.splice(idx, 1);
+    savePendingRequests();
     const g = getGroup(req.groupId);
     if (!g) return;
     if (g.owner !== socket.userName) return;
