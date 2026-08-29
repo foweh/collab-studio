@@ -2,9 +2,12 @@
 const fs = require('fs');
 const path = require('path');
 
-const BASE_DIR = process.pkg
-  ? path.dirname(process.execPath)
-  : path.join(__dirname, '..');
+// 支持通过 DATA_DIR 环境变量自定义数据目录（多实例测试、便携运行等场景）
+const BASE_DIR = process.env.DATA_DIR
+  ? process.env.DATA_DIR
+  : (process.pkg
+      ? path.dirname(process.execPath)
+      : path.join(__dirname, '..'));
 const DATA_DIR = path.join(BASE_DIR, 'data');
 
 function ensureDataDir() {

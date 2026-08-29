@@ -46,6 +46,7 @@ function saveProjects() {
     deleted: p.deleted || undefined, deletedAt: p.deletedAt || undefined,
     visibility: p.visibility || 'private',
     _version: p._version || 0,
+    syncedFrom: p.syncedFrom || undefined,
   }));
   saveJSON(PROJECTS_FILE, data);
 }
@@ -227,24 +228,47 @@ function redoProjectOp(projectId, userName) {
   return { id: p.id, name: p.name, data: p.data, updatedAt: p.updatedAt };
 }
 
-function mergeProjects(remoteList) {
+// 可跨机同步的项目：只包含公开项目，且不含已删除项目
+function getShareableProjects() {
+  return projects
+    .filter(p => !p.deleted && p.visibility && p.visibility !== 'private')
+    .map(p => ({ ...p }));
+}
+
+function mergeProjects(remoteList, source) {
   remoteList.forEach(rp => {
+    // 只同步公开项目：私密项目不允许跨机同步
+    if (!rp.visibility || rp.visibility === 'private') return;
+
     const local = projects.find(p => p.id === rp.id);
     if (!local) {
-      projects.push({ ...rp, _version: rp._version || 0 });
+      // 新增同步项目，保留来源标记
+      const synced = {
+        ...rp,
+        _version: rp._version || 0,
+        syncedFrom: source || rp.syncedFrom || undefined,
+      };
+      projects.push(synced);
     } else {
+      // 本地已有该项目：只有当初始来源相同或是公开项目时才允许合并，
+      // 防止本地私密项目被同名/同 ID 的远端项目覆盖。
+      if (local.owner !== rp.owner && local.visibility === 'private') return;
+
       const remoteVer = rp._version || 0;
       const localVer = local._version || 0;
+      // 本地是原始项目时，不应接受远端带来的 syncedFrom 标记
+      const incoming = { ...rp };
+      if (!local.syncedFrom) delete incoming.syncedFrom;
       if (remoteVer > localVer) {
-        // 远端版本更新 → 完全替换（last-writer-wins with version）
-        Object.assign(local, rp);
+        Object.assign(local, incoming);
         local._version = remoteVer;
+        // 只有本地副本才保留/更新 syncedFrom；本地原始项目不标记来源
+        if (source && local.syncedFrom) local.syncedFrom = source;
       } else if (remoteVer === localVer && rp.updatedAt > local.updatedAt) {
-        // 同版本但更新时间不同 → 按时间戳
-        Object.assign(local, rp);
+        Object.assign(local, incoming);
         local._version = localVer + 1;
+        if (source && local.syncedFrom) local.syncedFrom = source;
       }
-      // remoteVer < localVer：本地版本更新，忽略远端变更
     }
   });
 }
@@ -283,6 +307,7 @@ module.exports = {
   mergeProjects,
   transferProjects,
   saveProjects,
+  getShareableProjects,
   // 权限
   canEditProject,
   canDeleteProject,

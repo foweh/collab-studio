@@ -1,4 +1,13 @@
 // ─── 多机协作创作工作室 服务端 ──────────────────────────
+// 提前解析 --data-dir，确保后续 persist 模块使用自定义数据目录
+const args = process.argv.slice(2);
+for (let i = 0; i < args.length; i++) {
+  if (args[i] === '--data-dir' && args[i+1]) {
+    process.env.DATA_DIR = args[i+1];
+    i++;
+  }
+}
+
 const express = require('express');
 const http = require('http');
 const https = require('https');
@@ -20,6 +29,7 @@ const logger = require('./services/logger');
 const annotationSvc = require('./services/annotation');
 const { getCapCutMateClient } = require('./services/capcut-mate');
 const QRCode = require('qrcode');
+const ai = require('./services/ai');
 const { users } = auth; // 直接引用 users 对象以兼容现有代码
 
 // ─── 文件路径 ────────────────────────────────────────────
@@ -63,7 +73,6 @@ let HTTP_PORT = parseInt(process.env.PORT) || 3000;
 const UDP_PORT = 41234;
 const SCAN_DURATION = 5 * 60 * 1000;
 
-const args = process.argv.slice(2);
 let JOIN_TARGET = null;
 let CAPCUT_MATE_PORT = parseInt(process.env.CAPCUT_MATE_PORT) || 0;
 for (let i = 0; i < args.length; i++) {
@@ -544,6 +553,75 @@ app.get('/api/lan-url', async (req, res) => {
   }
 });
 
+// ─── AI (DeepSeek) API ────────────────────────────────
+// 思维导图 AI 生成、展开、聊天控制
+
+app.get('/api/ai/config', (req, res) => {
+  const cfg = ai.loadConfig();
+  res.json({ configured: !!cfg.api_token, model: cfg.model, api_url: cfg.api_url });
+});
+
+app.post('/api/ai/config', (req, res) => {
+  const { api_token, api_url, model } = req.body || {};
+  const cfg = ai.loadConfig();
+  if (api_token !== undefined) cfg.api_token = api_token;
+  if (api_url !== undefined) cfg.api_url = api_url;
+  if (model !== undefined) cfg.model = model;
+  ai.saveConfig(cfg);
+  res.json({ ok: true, configured: !!cfg.api_token });
+});
+
+app.post('/api/ai/mindmap/generate', async (req, res) => {
+  const { topic } = req.body || {};
+  if (!topic) return res.status(400).json({ error: '请提供主题' });
+  const cfg = ai.loadConfig();
+  if (!cfg.api_token) return res.status(400).json({ error: '请先在设置中配置 DeepSeek API Token' });
+  const ip = req.ip || (req.socket && req.socket.remoteAddress) || 'unknown';
+  if (!checkRateLimit(`ai:generate:${ip}`, 5, 60000)) {
+    return res.status(429).json({ error: 'AI 调用过于频繁，请稍后再试' });
+  }
+  try {
+    const data = await ai.generateMindmap(topic, cfg);
+    res.json(data);
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+app.post('/api/ai/mindmap/expand', async (req, res) => {
+  const { nodeText, context } = req.body || {};
+  if (!nodeText) return res.status(400).json({ error: '请提供节点信息' });
+  const cfg = ai.loadConfig();
+  if (!cfg.api_token) return res.status(400).json({ error: '请先在设置中配置 DeepSeek API Token' });
+  const ip = req.ip || (req.socket && req.socket.remoteAddress) || 'unknown';
+  if (!checkRateLimit(`ai:expand:${ip}`, 5, 60000)) {
+    return res.status(429).json({ error: 'AI 调用过于频繁，请稍后再试' });
+  }
+  try {
+    const data = await ai.expandNode(nodeText, context || '', cfg);
+    res.json(data);
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+app.post('/api/ai/mindmap/chat', async (req, res) => {
+  const { message, mindmap, history } = req.body || {};
+  if (!message) return res.status(400).json({ error: '请提供消息' });
+  const cfg = ai.loadConfig();
+  if (!cfg.api_token) return res.status(400).json({ error: '请先在设置中配置 DeepSeek API Token' });
+  const ip = req.ip || (req.socket && req.socket.remoteAddress) || 'unknown';
+  if (!checkRateLimit(`ai:chat:${ip}`, 5, 60000)) {
+    return res.status(429).json({ error: 'AI 调用过于频繁，请稍后再试' });
+  }
+  try {
+    const data = await ai.chatControl(message, JSON.stringify(mindmap || {}), history || [], cfg);
+    res.json(data);
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
 // ─── CapCut Mate API ──────────────────────────────────
 // 所有剪映相关端点统一在 /api/capcut/ 下，
 // 核心逻辑委托给 services/capcut-mate.js 模块。
@@ -797,6 +875,26 @@ app.get('/storyboard/*', (req, res) => {
   res.sendFile(path.join(FENJING_LOCAL_DIST, 'index.html'));
 });
 
+// ─── 音乐搜索代理（解决浏览器 CORS 限制） ────────────────
+function httpJSON(url, opts = {}) {
+  return new Promise((resolve, reject) => {
+    const parsed = new URL(url);
+    const mod = parsed.protocol === 'https:' ? https : http;
+    const req = mod.request(url, opts, (resp) => {
+      let body = '';
+      resp.on('data', chunk => body += chunk);
+      resp.on('end', () => {
+        try { resolve(JSON.parse(body)); }
+        catch(e) { reject(new Error(`Invalid JSON: ${body.slice(0,200)}`)); }
+      });
+    });
+    req.on('error', reject);
+    req.setTimeout(15000, () => { req.destroy(); reject(new Error('timeout')); });
+    if (opts.body) req.write(opts.body);
+    req.end();
+  });
+}
+
 let broadcastDiscover = () => {};
 if (!JOIN_TARGET) {
   const udp = dgram.createSocket({ type: 'udp4', reuseAddr: true });
@@ -899,8 +997,8 @@ function sanitizeString(v, maxLen = MAX_STR_LEN) {
 }
 
 function validateEventPayload(eventName, data) {
-  // 特殊处理：project-delete 支持字符串ID格式
-  if (eventName === 'project-delete' && typeof data === 'string') {
+  // 特殊处理：project-delete / project-restore / project-permanent-delete 支持字符串ID格式
+  if (['project-delete', 'project-restore', 'project-permanent-delete'].includes(eventName) && typeof data === 'string') {
     return { valid: validateId(data) };
   }
   
@@ -1355,8 +1453,13 @@ io.on('connection', (socket) => {
     projectSvc.saveProjects();
   });
   socket.on('project-restore', (id) => {
+    if (!validateEventPayload('project-restore', id).valid) return;
     const p = projects.find(x => x.id === id);
     if (!p) return;
+    if (!projectSvc.canDeleteProject(socket.userName, p, auth)) {
+      socket.emit('project-update-error', '你没有恢复此项目的权限');
+      return;
+    }
     p.deleted = false; delete p.deletedAt;
     socket.emit('project-restored', id);
     addLog(socket.id, socket.userName || SERVER_NAME, 'restored', p.type, p.name);
@@ -1750,7 +1853,16 @@ io.on('connection', (socket) => {
   // ── 私聊：获取历史 ──
   socket.on('chat-get-history', ({ with: targetName }) => {
     if (!socket.userName || !targetName) return;
+    if (!validateString(targetName, MAX_NAME_LEN)) return;
     const key = getChatKey(socket.userName, targetName);
+    // 权限校验：请求者必须是对话参与者之一
+    // getChatKey 用 ':' 拼接用户名。若用户名含 ':'（历史遗留，未在校验中排除），
+    // 可能与其他用户名组合产生 key 碰撞 → 读到他人私聊。此处保守拒绝非常规 key。
+    const parts = key.split(':');
+    if (parts.length !== 2 || !parts.includes(socket.userName)) {
+      socket.emit('chat-history', { with: targetName, messages: [] });
+      return;
+    }
     const messages = chatHistory[key] || [];
     socket.emit('chat-history', { with: targetName, messages });
   });
@@ -1920,6 +2032,10 @@ io.on('connection', (socket) => {
       }
       toKick.forEach(sid => viewers.delete(sid));
       if (viewers.size === 0) projectViewers.delete(projectId);
+    }
+    // ⚡ 局域网同步：公开项目可见性变更后通知对端
+    if (visibility !== 'private') {
+      broadcastToPeers({ type: 'projects-sync', projects: projectSvc.getShareableProjects() }, null);
     }
   });
 
@@ -2150,7 +2266,9 @@ function handleBridgeMessage(fromId, msg) {
       case 'projects-sync':
         // 记录合并前的项目ID，用于判断哪些是新项目
         const localIdsBefore = new Set(projects.map(p => p.id));
-        projectSvc.mergeProjects(msg.projects);
+        const peer = peers.get(fromId);
+        const source = peer ? { serverId: fromId, serverName: peer.name } : { serverId: fromId };
+        projectSvc.mergeProjects(msg.projects, source);
         // 批量通知：每个socket一次性收到所有有权限的变更（比逐项目逐socket更省流量）
         const newProjectsMap = {};  // socketId → projects[]
         const updateProjectsMap = {}; // socketId → projects[]
@@ -2162,11 +2280,13 @@ function handleBridgeMessage(fromId, msg) {
             if (!filtered.length) continue;
             if (isNew) {
               if (!newProjectsMap[sid]) newProjectsMap[sid] = [];
-              newProjectsMap[sid].push(rp);
+              // 从本地读取，确保包含 syncedFrom 标记
+              const localNew = projects.find(x => x.id === rp.id);
+              newProjectsMap[sid].push(localNew || rp);
             } else {
               if (!updateProjectsMap[sid]) updateProjectsMap[sid] = [];
               const p = projects.find(x => x.id === rp.id);
-              if (p) updateProjectsMap[sid].push({ id: p.id, name: p.name, data: p.data, updatedAt: p.updatedAt });
+              if (p) updateProjectsMap[sid].push({ id: p.id, name: p.name, data: p.data, updatedAt: p.updatedAt, syncedFrom: p.syncedFrom });
             }
           }
         });
@@ -2670,7 +2790,7 @@ function startServer(port) {
   console.log('║  多台电脑打开页面 → 开启局域网          ║');
   console.log('║  自动发现并组建协作网络                  ║');
   console.log('╠══════════════════════════════════════════╣');
-  console.log('║  👑 管理员: admin                          ║');
+  console.log('║  👑 管理员: 热合曼                        ║');
   console.log('║  🔑 密码: 已设置（登录页输入）            ║');
   console.log('║  💡 登录后可在右侧面板修改密码           ║');
   console.log('╚══════════════════════════════════════════╝');

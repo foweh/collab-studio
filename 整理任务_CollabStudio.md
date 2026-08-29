@@ -68,20 +68,22 @@ Collab Studio 是一个"创作协作全家桶":剧本/故事/导图/分镜实时
 ## P1 — 架构一致性(本周)
 
 ### P1-5:构建脚本结束三份代码漂移
-- 状态:[ ]
+- 状态:[x]
 - 问题:三份 server.js + services + utils 手工复制,功能不一致(见差异摘要)
 - 涉及文件:新建 `sync-build.js`,同步目标 `android/app/src/main/assets/nodejs-project/`、`installer/app/`
 - 修复:编写同步脚本,把主版 `server.js`、`services/`、`utils/` 同步到两个副本;执行一次同步
 - 预期结果:三份 server.js 内容一致(hash 相同)
 - 验收:`sync-build.js` 存在且执行后三份文件 hash 一致;README 补充"构建时运行"说明
+- 结果:✅ 已执行 `node sync-build.js --deps`,三份 server.js SHA-256 完全一致(`9fc4de38...`);副本补齐 `services/ai.js`(原缺失);`package.json` 合并依赖(android 补 helmet,installer 已有);installer 副本四项缺口(`--data-dir`/AI/音乐代理/getShareableProjects)全部恢复,启动验证通过
 
 ### P1-6:installer 补齐(由 P1-5 同步后验证)
-- 状态:[ ]
+- 状态:[x]
 - 问题:installer 版缺 `--data-dir` 提前解析、AI 模块、音乐代理
 - 涉及文件:`installer/app/server.js`
 - 修复:P1-5 同步后验证缺失功能已恢复;补回 `--data-dir` 解析位置
 - 预期结果:installer 版与主版功能等价
 - 验收:installer 版含 `/api/ai/*` 路由与 `--data-dir` 解析
+- 结果:✅ P1-5 同步后 installer 版与主版 hash 一致,`--data-dir` 提前解析/AI 路由/音乐代理均恢复;用主版依赖启动验证通过(横幅、AI 端点、数据目录均正常)
 
 ### P1-7:会话 token 持久化
 - 状态:[ ]
@@ -169,8 +171,8 @@ Collab Studio 是一个"创作协作全家桶":剧本/故事/导图/分镜实时
 | P0-2 | [x] | - | - |
 | P0-3 | [x] | - | - |
 | P0-4 | [x] | - | - |
-| P1-5 | [ ] | - | - |
-| P1-6 | [ ] | - | - |
+| P1-5 | [x] | - | - |
+| P1-6 | [x] | - | - |
 | P1-7 | [ ] | - | - |
 | P1-8 | [ ] | - | - |
 | P1-9 | [ ] | - | - |
