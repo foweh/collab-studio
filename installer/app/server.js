@@ -20,12 +20,15 @@ const os = require('os');
 const dgram = require('dgram');
 const { spawn } = require('child_process');
 const fs = require('fs');
+const multer = require('multer');
 
 const { ensureDataDir, loadJSON, saveJSON, DATA_DIR } = require('./utils/persist');
 const { checkRateLimit } = require('./utils/ratelimit');
 const auth = require('./services/auth');
 const projectSvc = require('./services/project');
 const deptSvc = require('./services/department');
+const materialSvc = require('./services/materials');
+const deviceSvc = require('./services/devices');
 const logger = require('./services/logger');
 const annotationSvc = require('./services/annotation');
 const { getCapCutMateClient } = require('./services/capcut-mate');
@@ -44,6 +47,27 @@ const ANNOTATIONS_FILE = path.join(DATA_DIR, 'annotations.json');
 const LOG_FILE = path.join(DATA_DIR, 'operation-log.json');
 const GROUPS_FILE = path.join(DATA_DIR, 'groups.json');
 const GROUP_CHAT_FILE = path.join(DATA_DIR, 'group-chat-history.json');
+
+// ─── 素材库上传目录(multer) ─────────────────────────────
+const MATERIAL_UPLOAD_DIR = path.join(__dirname, 'uploads');
+const MATERIAL_MAX_SIZE = 50 * 1024 * 1024; // 50MB
+try { fs.mkdirSync(MATERIAL_UPLOAD_DIR, { recursive: true }); } catch (_) {}
+const materialUpload = multer({
+  storage: multer.diskStorage({
+    destination: (req, file, cb) => {
+      // uploads/{departmentId}/{yyyymm}/
+      const dept = (req.body && req.body.departmentId) || (req.userDeptId) || 'default';
+      const sub = path.join(MATERIAL_UPLOAD_DIR, dept, new Date().toISOString().slice(0, 7).replace('-', ''));
+      try { fs.mkdirSync(sub, { recursive: true }); } catch (_) {}
+      cb(null, sub);
+    },
+    filename: (req, file, cb) => {
+      const ext = path.extname(file.originalname || '').slice(0, 10).toLowerCase();
+      cb(null, Date.now() + '_' + Math.random().toString(36).slice(2, 8) + ext);
+    },
+  }),
+  limits: { fileSize: MATERIAL_MAX_SIZE },
+});
 
 // ─── 白板持久化存储 ─────────────────────────────────────
 // 按房间存 data/whiteboard-{room}.json，刷新/重启可恢复
@@ -848,6 +872,210 @@ app.post('/api/capcut-sync-draft', async (req, res) => {
   } catch (e) {
     res.status(500).json({ error: e.message });
   }
+});
+
+// ─── 素材库 API(部门化改造阶段二) ──────────────────────
+// 上传文件: POST /api/materials/upload (multipart, 50MB 上限)
+app.post('/api/materials/upload', (req, res) => {
+  const userName = req.query.user || (req.headers['x-user-name'] || '');
+  if (!userName || !users[userName]) return res.status(401).json({ error: '未登录' });
+  // 权限: 部长/副部长/站长可上传
+  if (!materialSvc.canUploadMaterial(userName, auth)) {
+    return res.status(403).json({ error: '仅部长/副部长可上传素材' });
+  }
+  const deptId = auth.getDepartmentId(userName);
+  req.userDeptId = deptId || 'default';
+  materialUpload.single('file')(req, res, (err) => {
+    if (err) {
+      if (err.code === 'LIMIT_FILE_SIZE') return res.status(400).json({ error: '文件超过 50MB 限制' });
+      return res.status(400).json({ error: '上传失败: ' + err.message });
+    }
+    if (!req.file) return res.status(400).json({ error: '未收到文件' });
+    const { name, category, tags } = req.body || {};
+    const relPath = '/uploads/' + deptId + '/' + req.file.filename;
+    const mat = materialSvc.addMaterial({
+      departmentId: deptId,
+      name: name || req.file.originalname || '未命名素材',
+      fileUrl: relPath,
+      fileSize: req.file.size,
+      fileType: req.file.mimetype || 'application/octet-stream',
+      category: category || '其他',
+      tags: tags ? tags.split(',').map(t => t.trim()).filter(Boolean) : [],
+      uploadedBy: userName,
+    });
+    addLog('http', userName, 'uploaded material', '素材库', mat.name);
+    res.json({ ok: true, material: mat });
+  });
+});
+
+// 素材列表(部门过滤)
+app.get('/api/materials', (req, res) => {
+  const userName = req.query.user || (req.headers['x-user-name'] || '');
+  if (!userName || !users[userName]) return res.status(401).json({ error: '未登录' });
+  const { category, tag, keyword } = req.query;
+  const list = materialSvc.listMaterials(userName, auth, { category, tag, keyword });
+  res.json({ ok: true, materials: list });
+});
+
+// 素材详情
+app.get('/api/materials/:id', (req, res) => {
+  const userName = req.query.user || (req.headers['x-user-name'] || '');
+  if (!userName) return res.status(401).json({ error: '未登录' });
+  const mat = materialSvc.getMaterial(req.params.id);
+  if (!mat) return res.status(404).json({ error: '素材不存在' });
+  if (materialSvc.canAccessMaterial(userName, mat, auth) === 'none') return res.status(403).json({ error: '无权访问' });
+  res.json({ ok: true, material: mat });
+});
+
+// 更新素材信息(副部长+)
+app.put('/api/materials/:id', (req, res) => {
+  const userName = req.query.user || (req.headers['x-user-name'] || '');
+  if (!userName) return res.status(401).json({ error: '未登录' });
+  const mat = materialSvc.getMaterial(req.params.id);
+  if (!mat) return res.status(404).json({ error: '素材不存在' });
+  const access = materialSvc.canAccessMaterial(userName, mat, auth);
+  if (access !== 'write') return res.status(403).json({ error: '无权编辑素材' });
+  const { name, category, tags } = req.body || {};
+  const updated = materialSvc.updateMaterial(req.params.id, { name, category, tags });
+  res.json({ ok: true, material: updated });
+});
+
+// 删除素材(部长)
+app.delete('/api/materials/:id', (req, res) => {
+  const userName = req.query.user || (req.headers['x-user-name'] || '');
+  if (!userName) return res.status(401).json({ error: '未登录' });
+  const mat = materialSvc.getMaterial(req.params.id);
+  if (!mat) return res.status(404).json({ error: '素材不存在' });
+  const role = auth.getDeptRole(userName);
+  if (!auth.isAdmin(userName) && role !== 'leader') return res.status(403).json({ error: '仅部长可删除素材' });
+  if (!auth.isAdmin(userName) && mat.departmentId !== auth.getDepartmentId(userName)) return res.status(403).json({ error: '无权删除' });
+  materialSvc.deleteMaterial(req.params.id);
+  addLog('http', userName, 'deleted material', '素材库', mat.name);
+  res.json({ ok: true });
+});
+
+// 下载统计
+app.post('/api/materials/:id/download', (req, res) => {
+  const userName = req.query.user || (req.headers['x-user-name'] || '');
+  if (!userName) return res.status(401).json({ error: '未登录' });
+  const mat = materialSvc.getMaterial(req.params.id);
+  if (!mat) return res.status(404).json({ error: '素材不存在' });
+  if (materialSvc.canAccessMaterial(userName, mat, auth) === 'none') return res.status(403).json({ error: '无权下载' });
+  materialSvc.incrementDownload(req.params.id);
+  res.json({ ok: true, downloadCount: mat.downloadCount + 1, url: mat.fileUrl });
+});
+
+// 素材文件静态服务(路径 /uploads/...)
+app.use('/uploads', express.static(MATERIAL_UPLOAD_DIR));
+
+// ─── 设备管理 API(部门化改造阶段二) ────────────────────
+// 设备列表(部门过滤 + 类型/状态筛选)
+app.get('/api/devices', (req, res) => {
+  const userName = req.query.user || (req.headers['x-user-name'] || '');
+  if (!userName || !users[userName]) return res.status(401).json({ error: '未登录' });
+  const { type, status, keyword } = req.query;
+  const list = deviceSvc.listDevices(userName, auth, { type, status, keyword });
+  res.json({ ok: true, devices: list });
+});
+
+// 设备详情
+app.get('/api/devices/:id', (req, res) => {
+  const userName = req.query.user || (req.headers['x-user-name'] || '');
+  if (!userName) return res.status(401).json({ error: '未登录' });
+  const dev = deviceSvc.getDevice(req.params.id);
+  if (!dev) return res.status(404).json({ error: '设备不存在' });
+  if (deviceSvc.canAccessDevice(userName, dev, auth) === 'none') return res.status(403).json({ error: '无权访问' });
+  res.json({ ok: true, device: dev });
+});
+
+// 新增设备(副部长+, 仅传媒/多媒体部门)
+app.post('/api/devices', (req, res) => {
+  const userName = req.query.user || (req.headers['x-user-name'] || '');
+  if (!userName || !users[userName]) return res.status(401).json({ error: '未登录' });
+  const deptId = auth.getDepartmentId(userName);
+  if (!deviceSvc.isDeviceDept(deptId) && !auth.isAdmin(userName)) return res.status(403).json({ error: '仅传媒编导部/多媒体工作部可使用设备管理' });
+  const role = auth.getDeptRole(userName);
+  if (!auth.isAdmin(userName) && role !== 'leader' && role !== 'vice') return res.status(403).json({ error: '仅部长/副部长可新增设备' });
+  const { name, type, model, serialNumber } = req.body || {};
+  const dev = deviceSvc.addDevice({ departmentId: deptId, name, type, model, serialNumber, createdBy: userName });
+  addLog('http', userName, 'added device', '设备管理', dev.name);
+  res.json({ ok: true, device: dev });
+});
+
+// 编辑设备(副部长+)
+app.put('/api/devices/:id', (req, res) => {
+  const userName = req.query.user || (req.headers['x-user-name'] || '');
+  if (!userName) return res.status(401).json({ error: '未登录' });
+  const dev = deviceSvc.getDevice(req.params.id);
+  if (!dev) return res.status(404).json({ error: '设备不存在' });
+  const access = deviceSvc.canAccessDevice(userName, dev, auth);
+  if (access !== 'write') return res.status(403).json({ error: '无权编辑设备' });
+  const { name, type, model, serialNumber } = req.body || {};
+  const updated = deviceSvc.updateDevice(req.params.id, { name, type, model, serialNumber });
+  res.json({ ok: true, device: updated });
+});
+
+// 删除设备(部长)
+app.delete('/api/devices/:id', (req, res) => {
+  const userName = req.query.user || (req.headers['x-user-name'] || '');
+  if (!userName) return res.status(401).json({ error: '未登录' });
+  const dev = deviceSvc.getDevice(req.params.id);
+  if (!dev) return res.status(404).json({ error: '设备不存在' });
+  const role = auth.getDeptRole(userName);
+  if (!auth.isAdmin(userName) && role !== 'leader') return res.status(403).json({ error: '仅部长可删除设备' });
+  if (!auth.isAdmin(userName) && dev.departmentId !== auth.getDepartmentId(userName)) return res.status(403).json({ error: '无权删除' });
+  deviceSvc.deleteDevice(req.params.id);
+  addLog('http', userName, 'deleted device', '设备管理', dev.name);
+  res.json({ ok: true });
+});
+
+// 借用设备(干事+)
+app.post('/api/devices/:id/borrow', (req, res) => {
+  const userName = req.query.user || (req.headers['x-user-name'] || '');
+  if (!userName || !users[userName]) return res.status(401).json({ error: '未登录' });
+  const dev = deviceSvc.getDevice(req.params.id);
+  if (!dev) return res.status(404).json({ error: '设备不存在' });
+  if (deviceSvc.canAccessDevice(userName, dev, auth) === 'none') return res.status(403).json({ error: '无权操作' });
+  const { expectedReturnAt } = req.body || {};
+  const r = deviceSvc.borrowDevice(req.params.id, userName, expectedReturnAt || null);
+  if (r.error) return res.status(400).json({ error: r.error });
+  addLog('http', userName, 'borrowed device', '设备管理', dev.name);
+  res.json({ ok: true, device: r.device });
+});
+
+// 归还设备(借用人本人)
+app.post('/api/devices/:id/return', (req, res) => {
+  const userName = req.query.user || (req.headers['x-user-name'] || '');
+  if (!userName || !users[userName]) return res.status(401).json({ error: '未登录' });
+  const r = deviceSvc.returnDevice(req.params.id, userName);
+  if (r.error) return res.status(400).json({ error: r.error });
+  addLog('http', userName, 'returned device', '设备管理', r.device.name);
+  res.json({ ok: true, device: r.device });
+});
+
+// 设备状态变更(部长: 维护中/启用)
+app.put('/api/devices/:id/status', (req, res) => {
+  const userName = req.query.user || (req.headers['x-user-name'] || '');
+  if (!userName) return res.status(401).json({ error: '未登录' });
+  const dev = deviceSvc.getDevice(req.params.id);
+  if (!dev) return res.status(404).json({ error: '设备不存在' });
+  const role = auth.getDeptRole(userName);
+  if (!auth.isAdmin(userName) && role !== 'leader') return res.status(403).json({ error: '仅部长可变更设备状态' });
+  if (!auth.isAdmin(userName) && dev.departmentId !== auth.getDepartmentId(userName)) return res.status(403).json({ error: '无权操作' });
+  const { status } = req.body || {};
+  const r = deviceSvc.setDeviceStatus(req.params.id, status);
+  if (r.error) return res.status(400).json({ error: r.error });
+  res.json({ ok: true, device: r.device });
+});
+
+// 借用历史
+app.get('/api/devices/:id/logs', (req, res) => {
+  const userName = req.query.user || (req.headers['x-user-name'] || '');
+  if (!userName) return res.status(401).json({ error: '未登录' });
+  const dev = deviceSvc.getDevice(req.params.id);
+  if (!dev) return res.status(404).json({ error: '设备不存在' });
+  if (deviceSvc.canAccessDevice(userName, dev, auth) === 'none') return res.status(403).json({ error: '无权访问' });
+  res.json({ ok: true, logs: deviceSvc.getDeviceLogs(req.params.id) });
 });
 
 app.use(express.static(path.join(__dirname, 'public')));
