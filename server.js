@@ -232,19 +232,15 @@ let pwdResetId = passwordResets.length > 0 ? Math.max(...passwordResets.map(r =>
 function savePasswordResets() { saveJSON(PWD_RESETS_FILE, passwordResets); }
 
 // ─── 权限过滤的项目同步工具 ──────────────────────────────
-// 按用户权限过滤项目列表
+// 按用户权限过滤项目列表(统一走 projectSvc.canViewProject, 含部门隔离)
 function getFilteredProjects(userName, allProjects) {
   const user = auth && auth.users ? auth.users[userName] : null;
-  const isAdmin = user && user.isAdmin;
   return (allProjects || projects).filter(p => {
     if (p.deleted) return false;                 // 已删除不显示
     // 文件夹始终展示（不按 owner/visibility 过滤），让所有用户能看到
     // 完整的目录树；进入文件夹的内容查看权限仍由前端 canViewFolder 校验
     if (p.type === 'folder') return true;
-    if (isAdmin) return true;                     // 管理员看全部
-    if (p.owner === userName) return true;        // 所有者看自己的
-    if (p.visibility !== 'private') return true;  // 公开项目所有人可见
-    return false;                                 // 其他人的 private → 隐藏
+    return projectSvc.canViewProject(userName, p, auth);   // 统一权限中心(含部门隔离)
   });
 }
 
@@ -1274,7 +1270,9 @@ io.on('connection', (socket) => {
           isAdmin: false, fingerprint: '', isBanned: false,
           role: 'editor',
           lastSeen: 0,
-          avatar: ''
+          avatar: '',
+          departmentId: null,   // 部门 id(站长分配)
+          deptRole: null,       // 部门角色: leader/vice/member
         };
       }
     }
@@ -1286,7 +1284,14 @@ io.on('connection', (socket) => {
     onlineUsers.set(socket.id, { name: userName, joinedAt: Date.now(), isAdmin, fingerprint: fingerprint || '' });
     broadcastOnlineUsers();
     addLog(socket.id, userName, 'joined', 'system', '');
-    socket.emit('login-success', { userName, isAdmin, hasPassword: !!users[userName]?.passwordHash, role: isAdmin ? 'editor' : (users[userName]?.role || 'commenter'), avatar: users[userName]?.avatar || '', token: auth.generateSessionToken(userName) });
+    socket.emit('login-success', {
+      userName, isAdmin, hasPassword: !!users[userName]?.passwordHash,
+      role: isAdmin ? 'editor' : (users[userName]?.role || 'commenter'),
+      avatar: users[userName]?.avatar || '',
+      token: auth.generateSessionToken(userName),
+      departmentId: users[userName]?.departmentId || null,
+      deptRole: users[userName]?.deptRole || null,
+    });
   });
 
   socket.on('set-server-name', (name) => {
@@ -1347,6 +1352,13 @@ io.on('connection', (socket) => {
       visibility: VALID_VISIBILITY.includes(data.visibility) ? data.visibility : 'private',
       parentId: data.parentId || undefined
     };
+    // 部门归属: 部长/副部长/干事创建时自动挂本部门; admin 可显式指定部门
+    const myDept = auth.getDepartmentId(socket.userName);
+    if (auth.isAdmin(socket.userName) && data.departmentId) {
+      p.departmentId = data.departmentId;
+    } else if (myDept) {
+      p.departmentId = myDept;
+    }
     projects.push(p); 
     console.log('项目创建成功:', p);
     socket.emit('project-created', p);
