@@ -694,6 +694,27 @@ app.post('/api/ai/mindmap/chat', async (req, res) => {
   }
 });
 
+// POST /api/ai/doc — AI 文档助手(部门化阶段三: 初稿/续写/润色/大纲/拟标题)
+app.post('/api/ai/doc', async (req, res) => {
+  const { projectType, docTitle, content, action, instruction } = req.body || {};
+  if (!action || !['draft', 'continue', 'polish', 'outline', 'title'].includes(action)) {
+    return res.status(400).json({ error: '无效的 AI 操作类型' });
+  }
+  if (action === 'draft' && !instruction) return res.status(400).json({ error: '请提供文档主题' });
+  const cfg = ai.loadConfig();
+  if (!cfg.api_token) return res.status(400).json({ error: '请先在设置中配置 DeepSeek API Token' });
+  const ip = req.ip || (req.socket && req.socket.remoteAddress) || 'unknown';
+  if (!checkRateLimit(`ai:doc:${ip}`, 5, 60000)) {
+    return res.status(429).json({ error: 'AI 调用过于频繁，请稍后再试' });
+  }
+  try {
+    const text = await ai.aiDoc(projectType || 'article', docTitle || '', content || '', action, instruction || '', cfg);
+    res.json({ ok: true, text });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
 // ─── CapCut Mate API ──────────────────────────────────
 // 所有剪映相关端点统一在 /api/capcut/ 下，
 // 核心逻辑委托给 services/capcut-mate.js 模块。

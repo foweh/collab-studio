@@ -201,10 +201,62 @@ async function chatControl(userMessage, mindmapJson, chatHistory, config) {
   return extractJson(result.choices[0].message.content);
 }
 
+// ─── AI 文档助手(部门化阶段三) ─────────────────────────
+// 场景: draft(初稿) / continue(续写) / polish(润色) / outline(大纲) / title(拟标题)
+// 用于: 推文/策划案/会议记录/主持稿等文档型项目
+
+async function aiDoc(projectType, docTitle, currentContent, action, userInstruction, config) {
+  const typeLabels = {
+    article: '公众号推文', activity: '活动策划案', meeting: '会议记录',
+    'audio-project': '主持稿/稿件', 'video-project': '视频脚本', 'design-task': '设计说明',
+  };
+  const typeLabel = typeLabels[projectType] || '文档';
+
+  let systemPrompt = '';
+  switch (action) {
+    case 'draft':
+      systemPrompt = `你是校园学生组织的资深${typeLabel}撰稿人。根据用户提供的主题，生成一份完整的${typeLabel}初稿。
+要求：
+- 结构清晰，使用 Markdown 标题分层（## 小标题）
+- 语言符合校园学生组织风格，正式但不僵硬
+- 内容具体可执行，不要空话套话
+- 推文：含开头钩子、正文分节、结尾号召
+- 策划案：含活动背景、目标、时间地点、流程安排、预算、应急预案
+- 会议记录：含会议主题、时间地点、参会人、议程、决议事项
+只输出正文内容，不要解释。`;
+      break;
+    case 'continue':
+      systemPrompt = `你是${typeLabel}续写助手。用户给你一篇半成品，请从断处自然续写，保持风格一致、内容衔接。只输出续写部分。`;
+      break;
+    case 'polish':
+      systemPrompt = `你是${typeLabel}润色编辑。请润色以下文本：修正错别字和病句、让表达更通顺有力、保留原意。只输出润色后的完整文本。`;
+      break;
+    case 'outline':
+      systemPrompt = `你是${typeLabel}策划顾问。请为给定主题生成一份详细大纲（Markdown 列表/标题），涵盖${typeLabel}应有的所有关键部分，每部分用一句话说明要点。只输出大纲。`;
+      break;
+    case 'title':
+      systemPrompt = `你是校园新媒体标题专家。为以下${typeLabel}生成 5 个吸引人的标题候选，用数字列表输出，每个不超过 20 字。只输出 5 个标题。`;
+      break;
+    default:
+      systemPrompt = `你是${typeLabel}助手。请根据用户指令处理以下文本。`;
+  }
+
+  const userPrompt = `文档标题：${docTitle || '（未命名）'}\n\n${currentContent ? '当前内容：\n' + currentContent + '\n\n' : ''}${userInstruction ? '用户要求：' + userInstruction : ''}`;
+
+  const messages = [
+    { role: 'system', content: systemPrompt },
+    { role: 'user', content: userPrompt },
+  ];
+
+  const result = await callDeepSeek(config, messages, { temperature: action === 'title' ? 0.9 : 0.7, max_tokens: 3000 });
+  return result.choices[0].message.content;
+}
+
 module.exports = {
   loadConfig,
   saveConfig,
   generateMindmap,
   expandNode,
-  chatControl
+  chatControl,
+  aiDoc
 };
