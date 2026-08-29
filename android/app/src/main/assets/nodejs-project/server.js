@@ -102,7 +102,6 @@ const SCAN_DURATION = 5 * 60 * 1000;
 const MAX_AVATAR_BYTES = 2 * 1024 * 1024;   // 头像 2MB
 const MAX_AVATAR_PER_DAY = 5;                // 头像每天最多 5 次
 const MAX_BOARD_ELEMENT_BYTES = 50000;       // 白板单元素 50KB
-const MAX_HTTP_JSON_TIMEOUT = 15000;         // 音乐代理 15s
 const HTTP_REDIRECT_FROM_PORT = 3000;        // HTTP→HTTPS 重定向源端口
 const MAX_BODY_LIMIT = '3mb';                // JSON body 上限
 
@@ -138,7 +137,9 @@ function startFlaskServer() {
     return;
   }
   console.log('[场景检测] 启动 Flask 服务...');
-  flaskProcess = spawn('python', ['server.py'], {
+  // 兼容 Ubuntu(默认无 python 别名): python → python3 回退
+  const pyCmd = process.env.PYTHON_CMD || (process.platform === 'win32' ? 'python' : (fs.existsSync('/usr/bin/python3') ? 'python3' : 'python'));
+  flaskProcess = spawn(pyCmd, ['server.py'], {
     cwd: SCENEDETECT_DIR,
     stdio: ['ignore', 'pipe', 'pipe'],
     env: { ...process.env, SCENEDETECT_PORT: String(SCENEDETECT_PORT) },
@@ -921,62 +922,24 @@ app.get('/api/auth-check', async (req, res) => {
 });
 
 // ─── 白板前端（Vue 3 新前端） ────────────────────────────
-const STUDIO_VUE_DIST = path.join(__dirname, '..', 'studio-vue', 'dist');
+// 优先项目内 dist(独立部署), 回退仓库上级目录(开发布局)
+function resolveDist(rel) {
+  const inside = path.join(__dirname, rel);
+  const outside = path.join(__dirname, '..', rel);
+  return fs.existsSync(path.join(inside, 'index.html')) ? inside : outside;
+}
+const STUDIO_VUE_DIST = resolveDist('studio-vue/dist');
 app.use('/studio', express.static(STUDIO_VUE_DIST));
 app.get('/studio/*', (req, res) => {
   res.sendFile(path.join(STUDIO_VUE_DIST, 'index.html'));
 });
 
 // ─── 分镜工具（fenjing-local） ──────────────────────────
-const FENJING_LOCAL_DIST = path.join(__dirname, '..', 'fenjing-local', 'dist');
+const FENJING_LOCAL_DIST = resolveDist('fenjing-local/dist');
 app.use('/storyboard', express.static(FENJING_LOCAL_DIST));
 app.get('/storyboard/*', (req, res) => {
   res.sendFile(path.join(FENJING_LOCAL_DIST, 'index.html'));
 });
-
-// ─── 音乐搜索代理（解决浏览器 CORS 限制） ────────────────
-// 安全加固：仅允许代理白名单域名，防止 SSRF（内网探测/任意 URL 请求）
-const PROXY_ALLOWED_HOSTS = [
-  'songsearch.kugou.com',       // 酷狗搜索
-  'u.y.qq.com',                 // QQ 音乐
-  'lxmusicapi.onrender.com',    // lx-music-api
-];
-const PROXY_ALLOWED_SUFFIXES = ['.qq.com', '.kugou.com', '.onrender.com'];
-
-function isProxyHostAllowed(host) {
-  if (!host) return false;
-  const h = host.toLowerCase();
-  if (PROXY_ALLOWED_HOSTS.includes(h)) return true;
-  return PROXY_ALLOWED_SUFFIXES.some(s => h.endsWith(s));
-}
-
-function httpJSON(url, opts = {}) {
-  return new Promise((resolve, reject) => {
-    let parsed;
-    try { parsed = new URL(url); }
-    catch (e) { return reject(new Error(`Invalid URL: ${url}`)); }
-    if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
-      return reject(new Error(`不支持的协议: ${parsed.protocol}`));
-    }
-    // SSRF 防护：只允许白名单域名
-    if (!isProxyHostAllowed(parsed.hostname)) {
-      return reject(new Error(`目标域名不在白名单: ${parsed.hostname}`));
-    }
-    const mod = parsed.protocol === 'https:' ? https : http;
-    const req = mod.request(url, opts, (resp) => {
-      let body = '';
-      resp.on('data', chunk => body += chunk);
-      resp.on('end', () => {
-        try { resolve(JSON.parse(body)); }
-        catch(e) { reject(new Error(`Invalid JSON: ${body.slice(0,200)}`)); }
-      });
-    });
-    req.on('error', reject);
-    req.setTimeout(MAX_HTTP_JSON_TIMEOUT, () => { req.destroy(); reject(new Error('timeout')); });
-    if (opts.body) req.write(opts.body);
-    req.end();
-  });
-}
 
 let broadcastDiscover = () => {};
 if (!JOIN_TARGET) {
