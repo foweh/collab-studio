@@ -155,12 +155,12 @@ Collab Studio 是一个"创作协作全家桶":剧本/故事/导图/分镜实时
 - 验收:各引用点使用常量且行为不变(✅ server.js 新增 MAX_AVATAR_BYTES/MAX_AVATAR_PER_DAY/MAX_BOARD_ELEMENT_BYTES/MAX_HTTP_JSON_TIMEOUT/HTTP_REDIRECT_FROM_PORT/MAX_BODY_LIMIT;capcut-mate.js 新增 DRAFT_DEFAULT_WIDTH/HEIGHT,9 处 1920×1080 全部替换;冒烟测试登录/白板/建项目正常)
 
 ### P2-15:README 补齐
-- 状态:[ ]
+- 状态:[x]
 - 问题:README 严重滞后(未提登录/AI/剪映/场景检测/白板/聊天)
 - 涉及文件:`README.md`
 - 修复:补齐功能清单、登录认证、AI、剪映、场景检测、部署章节
 - 预期结果:README 反映项目现状
-- 验收:README 含全部主要模块说明与启动/部署指引
+- 验收:README 含全部主要模块说明与启动/部署指引(✅ 已补齐:登录权限/会话持久化/AI 导图/剪映集成/场景检测/白板/HTTPS 部署/同步构建章节,功能清单同步更新)
 
 ---
 
@@ -182,4 +182,4 @@ Collab Studio 是一个"创作协作全家桶":剧本/故事/导图/分镜实时
 | P2-12 | [x] | - | - |
 | P2-13 | [x] | - | - |
 | P2-14 | [x] | - | - |
-| P2-15 | [ ] | - | - |
+| P2-15 | [x] | - | - |
