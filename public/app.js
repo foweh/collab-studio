@@ -1104,18 +1104,33 @@ function updateDeptWorkspace() {
   if (title) title.textContent = `🏢 ${getDeptName(myDepartmentId)}工作台`;
   if (desc) desc.textContent = DEPT_DESCRIPTIONS[myDepartmentId] || '';
   ws.style.display = '';
-  // 快捷按钮: 新建分镜项目(传媒编导部等视频类部门)
+  // 部门默认类型快速创建(阶段三): 各部门专属类型
+  const DEPT_CREATE_LABELS = {
+    'media-directing': '🎬 新建分镜', 'editorial-public': '📝 新建推文', 'culture-design': '🎨 新建设计任务',
+    'secretariat': '📄 新建会议记录', 'host-broadcast': '🎙️ 新建音频项目', 'dev-operations': '🧠 新建导图',
+    'multimedia': '🎬 新建视频项目', 'event-planning': '📋 新建活动',
+  };
+  const DEPT_CREATE_TYPES = {
+    'media-directing': 'storyboard', 'editorial-public': 'article', 'culture-design': 'design-task',
+    'secretariat': 'meeting', 'host-broadcast': 'audio-project', 'dev-operations': 'mindmap',
+    'multimedia': 'video-project', 'event-planning': 'activity',
+  };
   const btnSb = document.getElementById('dept-create-storyboard');
   const btnAi = document.getElementById('dept-ai-outline');
   const btnMat = document.getElementById('dept-materials-btn');
   const btnDev = document.getElementById('dept-devices-btn');
   const videoDepts = ['media-directing', 'multimedia'];
-  if (btnSb) btnSb.style.display = videoDepts.includes(myDepartmentId) ? '' : 'none';
+  // 主创建按钮: 显示部门默认类型
+  if (btnSb) {
+    btnSb.style.display = myDepartmentId ? '' : 'none';
+    btnSb.textContent = DEPT_CREATE_LABELS[myDepartmentId] || '➕ 新建';
+    btnSb.onclick = () => createDeptProject(DEPT_CREATE_TYPES[myDepartmentId] || 'mindmap');
+  }
+  // AI 分镜框架: 仅视频类部门
   if (btnAi) btnAi.style.display = videoDepts.includes(myDepartmentId) ? '' : 'none';
   // 素材库: 所有部门可用; 设备管理: 仅传媒/多媒体
   if (btnMat) btnMat.style.display = myDepartmentId ? '' : 'none';
   if (btnDev) btnDev.style.display = videoDepts.includes(myDepartmentId) ? '' : 'none';
-  if (btnSb) btnSb.onclick = () => createDeptProject('storyboard');
   if (btnAi) btnAi.onclick = () => openAiOutlineDialog();
   if (btnMat) btnMat.onclick = () => openDeptSubview('materials');
   if (btnDev) btnDev.onclick = () => openDeptSubview('devices');
@@ -2294,8 +2309,10 @@ function renderFolderCard(f, isSynced) {
 }
 
 function renderProjectCard(p, isSynced) {
-  const icons = { script: '📜', mindmap: '🧠', story: '📖', folder: '📁', project: '🎬' };
-  const names = { script: '剧本', mindmap: '思维导图', story: '故事', folder: '文件夹', project: '项目' };
+  const icons = { script: '📜', mindmap: '🧠', story: '📖', folder: '📁', project: '🎬',
+    article: '📝', 'design-task': '🎨', activity: '📋', meeting: '📄', 'audio-project': '🎙️', 'video-project': '🎬' };
+  const names = { script: '剧本', mindmap: '思维导图', story: '故事', folder: '文件夹', project: '项目',
+    article: '推文', 'design-task': '设计任务', activity: '活动', meeting: '会议记录', 'audio-project': '音频项目', 'video-project': '视频项目' };
   const visIcons = { 'private': '🔒', 'public-read': '👁️', 'public-edit': '✏️' };
   const visLabels = { 'private': '私密', 'public-read': '公开-只读', 'public-edit': '公开-可编辑' };
   const vis = p.visibility || 'private';
@@ -2304,15 +2321,29 @@ function renderProjectCard(p, isSynced) {
   const visOpts = ['private', 'public-read', 'public-edit'].map(v =>
     `<option value="${v}"${vis === v ? ' selected' : ''}>${visLabels[v]}</option>`
   ).join('');
+  // 流程类项目显示状态徽标
+  let statusBadge = '';
+  const wfStatus = p.data && p.data.status;
+  const typeLabel = names[p.type] || p.type;
+  const metaType = p.type === 'project' ? ('项目 · ' + ((p.data && p.data.items) ? p.data.items.length + '个子项' : '0个子项')) : typeLabel;
+  if (['article', 'design-task', 'activity', 'meeting', 'audio-project', 'video-project'].includes(p.type) && wfStatus) {
+    const wfLabels = { draft: '草稿', first_review: '待初审', second_review: '待终审', published: '已发布', rejected: '已驳回',
+      planning: '策划中', pending_approval: '待审批', executing: '执行中', ended: '已结束', reviewed: '已复盘',
+      todo: '待接单', doing: '进行中', review: '待审核', done: '已完成',
+      archived: '已归档', recording: '录制中', post: '后期制作',
+      preproduction: '前期', shooting: '拍摄中', postproduction: '后期', finished: '已成片' };
+    const label = wfLabels[wfStatus] || wfStatus;
+    statusBadge = `<span style="display:inline-block;padding:1px 8px;border-radius:10px;font-size:10px;background:var(--accent);color:#fff;margin-left:4px">${label}</span>`;
+  }
   const card = document.createElement('div');
   card.className = 'project-card' + (isSynced ? ' synced' : '');
   card.innerHTML = `
     <span class="p-type">${icons[p.type] || '📄'}</span>
     <button class="p-del" data-id="${p.id}">×</button>
-    <div class="p-name">${esc(cleanProjectName(p.name))}</div>
+    <div class="p-name">${esc(cleanProjectName(p.name))}${statusBadge}</div>
     <div class="p-meta" style="display:flex;align-items:center;gap:4px;flex-wrap:wrap">
       <span title="${visLabels[vis]}">${visIcons[vis] || '🔒'}</span>
-      ${p.type === 'project' ? ('项目 · ' + ((p.data && p.data.items) ? p.data.items.length + '个子项' : '0个子项')) : (names[p.type] || p.type)} · ${timeAgo(p.updatedAt)}
+      ${metaType} · ${timeAgo(p.updatedAt)}
     </div>
     <div class="p-owner">${esc(p.owner || '我')}${sourceLabel}</div>
     ${canChange ? `<div style="margin-top:4px"><select class="vis-select" data-id="${p.id}" style="padding:1px 4px;font-size:10px;border:1px solid var(--border);border-radius:3px;background:var(--surface2);color:var(--text);outline:none">${visOpts}</select></div>` : `<div style="margin-top:4px;font-size:10px;color:var(--text-dim)">${visIcons[vis]} ${visLabels[vis]}</div>`}
