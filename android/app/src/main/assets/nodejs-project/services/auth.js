@@ -8,12 +8,32 @@ const { loadJSON, saveJSON, DATA_DIR } = require('../utils/persist');
 
 const SALT_ROUNDS = 10;
 const USERS_FILE = path.join(DATA_DIR, 'users.json');
+const TOKENS_FILE = path.join(DATA_DIR, 'tokens.json');
 
 // ─── 用户数据 ─────────────────────────────────────────
 let users = loadJSON(USERS_FILE, {});
 
 // ─── 会话令牌 ─────────────────────────────────────────
+// 持久化到 data/tokens.json，服务器重启后已签发 token 仍有效
 const sessionTokens = new Map(); // token → { userName, expiresAt }
+
+function loadSessionTokens() {
+  const saved = loadJSON(TOKENS_FILE, {});
+  const now = Date.now();
+  for (const [token, s] of Object.entries(saved)) {
+    if (s && s.userName && s.expiresAt > now) {
+      sessionTokens.set(token, { userName: s.userName, expiresAt: s.expiresAt });
+    }
+  }
+}
+
+function saveSessionTokens() {
+  const obj = {};
+  for (const [token, s] of sessionTokens) obj[token] = s;
+  saveJSON(TOKENS_FILE, obj);
+}
+
+loadSessionTokens();
 
 function generateSessionToken(userName) {
   const token = 'tok_' + crypto.randomBytes(16).toString('hex');
@@ -23,6 +43,7 @@ function generateSessionToken(userName) {
       if (Date.now() > s.expiresAt) sessionTokens.delete(t);
     }
   }
+  saveSessionTokens();
   return token;
 }
 
@@ -31,6 +52,7 @@ function validateSessionToken(token) {
   const session = sessionTokens.get(token);
   if (Date.now() > session.expiresAt) {
     sessionTokens.delete(token);
+    saveSessionTokens();
     return null;
   }
   return session.userName;
