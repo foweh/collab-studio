@@ -29,6 +29,7 @@ const projectSvc = require('./services/project');
 const deptSvc = require('./services/department');
 const materialSvc = require('./services/materials');
 const deviceSvc = require('./services/devices');
+const wfSvc = require('./services/state-machine');
 const logger = require('./services/logger');
 const annotationSvc = require('./services/annotation');
 const { getCapCutMateClient } = require('./services/capcut-mate');
@@ -1247,7 +1248,7 @@ function setupBridge(bridgeSocket, remoteIp, isIncoming) {
 }
 
 // ─── 输入验证工具 ──────────────────────────────────────
-const VALID_TYPES = ['script', 'mindmap', 'story', 'storyboard', 'folder', 'project'];
+const VALID_TYPES = ['script', 'mindmap', 'story', 'storyboard', 'folder', 'project', 'article', 'design-task', 'activity', 'meeting', 'audio-project', 'video-project'];
 const VALID_VISIBILITY = ['private', 'public-read', 'public-edit'];
 const VALID_STATUS = ['open', 'resolved', 'rejected', 'pending'];
 const VALID_ITEM_TYPES = ['script', 'mindmap', 'story', 'storyboard', 'custom']; // 允许自定义类型
@@ -2297,6 +2298,53 @@ io.on('connection', (socket) => {
     projectSvc.saveProjects();
     socket.emit('project-updated', { id: p.id, name: p.name, data: p.data, updatedAt: p.updatedAt });
     addLog(socket.id, socket.userName, 'assigned project', p.type, `${p.name} → ${assigneeName || '无'}`);
+  });
+
+  // ── 通用状态机(部门化阶段三) ──
+  // 查询项目状态信息(状态列表/当前状态/可用流转)
+  socket.on('workflow-status', ({ projectId }) => {
+    if (!socket.userName) return;
+    const p = projects.find(x => x.id === projectId);
+    if (!p) return;
+    const wf = wfSvc.getWorkflow(p.type);
+    const cur = (p.data && p.data.status) || (wf.statuses[0] && wf.statuses[0].id);
+    const myRole = auth.getDeptRole(socket.userName);
+    socket.emit('workflow-status-result', {
+      projectId, type: p.type,
+      statuses: wf.statuses,
+      current: cur,
+      transitions: wfSvc.getAvailableTransitions(p.type, cur, myRole, socket.isAdmin),
+    });
+  });
+
+  // 执行状态流转
+  socket.on('workflow-transition', ({ projectId, toStatus, note }) => {
+    if (!socket.userName) return;
+    const p = projects.find(x => x.id === projectId);
+    if (!p) return;
+    // 部门隔离: 只有本部门成员可操作
+    if (p.departmentId && auth.getDepartmentId(socket.userName) !== p.departmentId && !socket.isAdmin) {
+      socket.emit('workflow-error', '无权操作其他部门的项目');
+      return;
+    }
+    const r = wfSvc.transition(p, toStatus, socket.userName, auth.getDeptRole(socket.userName), auth, { note });
+    if (r.error) { socket.emit('workflow-error', r.error); return; }
+    projectSvc.saveProjects();
+    broadcastProjectUpdateToAll(p.id, socket.id);
+    addLog(socket.id, socket.userName, 'workflow', p.type, `${p.name}: ${r.from} → ${r.to}`);
+    socket.emit('workflow-transition-result', { ok: true, projectId: p.id, from: r.from, to: r.to });
+    // 通知其他在线同项目用户
+    for (const [sid, u] of onlineUsers) {
+      if (u.name !== socket.userName) io.to(sid).emit('workflow-changed', { projectId: p.id, from: r.from, to: r.to });
+    }
+  });
+
+  // 查询流转历史
+  socket.on('workflow-logs', ({ projectId }) => {
+    if (!socket.userName) return;
+    const p = projects.find(x => x.id === projectId);
+    if (!p) return;
+    socket.emit('workflow-logs-result', { projectId, logs: wfSvc.getProjectLogs(projectId) });
   });
 
   // ── 批注系统 ──
