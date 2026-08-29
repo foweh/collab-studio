@@ -2404,6 +2404,14 @@ function openProject(p) {
     case 'story': moduleName = 'story'; break;
     case 'project': 
     case 'storyboard': moduleName = 'storyboard'; break;
+    // 部门专属类型(阶段三): 统一走 dept-doc 视图
+    case 'article':
+    case 'design-task':
+    case 'activity':
+    case 'meeting':
+    case 'audio-project':
+    case 'video-project':
+      moduleName = 'dept-doc'; break;
   }
   
   const panel = document.getElementById(`panel-${moduleName}`);
@@ -2416,7 +2424,7 @@ function openProject(p) {
   sessionStorage.setItem('collab-last-panel', moduleName);
   
   // 如果是创作工具，隐藏左侧导航和工具栏
-  const creativeModules = ['script', 'mindmap', 'story', 'storyboard'];
+  const creativeModules = ['script', 'mindmap', 'story', 'storyboard', 'dept-doc'];
   if (creativeModules.includes(moduleName)) {
     if (nav) nav.style.display = 'none';
     if (toolbar) toolbar.style.display = 'none';
