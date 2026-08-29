@@ -1119,6 +1119,7 @@ function updateDeptWorkspace() {
   const btnAi = document.getElementById('dept-ai-outline');
   const btnMat = document.getElementById('dept-materials-btn');
   const btnDev = document.getElementById('dept-devices-btn');
+  const btnStats = document.getElementById('dept-stats-btn');
   const videoDepts = ['media-directing', 'multimedia'];
   // 主创建按钮: 显示部门默认类型
   if (btnSb) {
@@ -1128,12 +1129,14 @@ function updateDeptWorkspace() {
   }
   // AI 分镜框架: 仅视频类部门
   if (btnAi) btnAi.style.display = videoDepts.includes(myDepartmentId) ? '' : 'none';
-  // 素材库: 所有部门可用; 设备管理: 仅传媒/多媒体
+  // 素材库: 所有部门可用; 设备管理: 仅传媒/多媒体; 数据看板: 仅发展运营部
   if (btnMat) btnMat.style.display = myDepartmentId ? '' : 'none';
   if (btnDev) btnDev.style.display = videoDepts.includes(myDepartmentId) ? '' : 'none';
+  if (btnStats) btnStats.style.display = myDepartmentId === 'dev-operations' ? '' : 'none';
   if (btnAi) btnAi.onclick = () => openAiOutlineDialog();
   if (btnMat) btnMat.onclick = () => openDeptSubview('materials');
   if (btnDev) btnDev.onclick = () => openDeptSubview('devices');
+  if (btnStats) btnStats.onclick = () => openDeptSubview('stats');
 }
 
 // 部门内新建项目(自动挂本部门, 后端处理归属)
@@ -1192,6 +1195,9 @@ function openDeptSubview(type) {
       actions.appendChild(addBtn);
     }
     renderDevices();
+  } else if (type === 'stats') {
+    title.textContent = '📊 数据看板';
+    renderStats();
   }
 }
 
@@ -1289,6 +1295,37 @@ function deleteMaterial(id) {
       if (data.ok) { alert('✅ 已删除'); renderMaterials(); }
       else alert('❌ ' + (data.error || '删除失败'));
     }).catch(e => alert('❌ ' + e.message));
+}
+
+// ─── 数据看板(发展运营部) ─────────────────────────────
+function renderStats() {
+  const content = document.getElementById('dept-subview-content');
+  if (!content) return;
+  content.innerHTML = '<div style="color:var(--text-dim);padding:20px">加载中...</div>';
+  // 收集统计: 项目数/用户数/素材数/设备数/在线数
+  Promise.all([
+    fetch('/api/materials' + apiUser()).then(r => r.json()).catch(() => ({ materials: [] })),
+    fetch('/api/devices' + apiUser()).then(r => r.json()).catch(() => ({ devices: [] })),
+  ]).then(([matData, devData]) => {
+    const mats = (matData.materials || []).length;
+    const devs = (devData.devices || []).length;
+    const projs = (projects || []).filter(p => !p.deleted).length;
+    const users = Object.keys(avatarMap || {}).length;
+    const online = (onlineUsers || []).length;
+    const cards = [
+      { icon: '📂', label: '项目总数', value: projs, color: '#3b82f6' },
+      { icon: '👥', label: '注册用户', value: users, color: '#10b981' },
+      { icon: '🟢', label: '当前在线', value: online, color: '#22c55e' },
+      { icon: '📁', label: '素材库文件', value: mats, color: '#8b5cf6' },
+      { icon: '📦', label: '设备数量', value: devs, color: '#f59e0b' },
+    ];
+    content.innerHTML = '<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:12px">' + cards.map(c => `
+      <div style="border:1px solid var(--border);border-radius:12px;padding:16px;background:var(--card-bg);text-align:center">
+        <div style="font-size:24px">${c.icon}</div>
+        <div style="font-size:28px;font-weight:700;color:${c.color};margin:6px 0">${c.value}</div>
+        <div style="font-size:12px;color:var(--text-dim)">${c.label}</div>
+      </div>`).join('') + '</div>';
+  }).catch(e => { content.innerHTML = '<div style="color:#ef4444">加载失败: ' + e.message + '</div>'; });
 }
 
 // ─── 设备管理 ─────────────────────────────────────────
