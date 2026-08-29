@@ -1650,6 +1650,8 @@ io.on('connection', (socket) => {
       role: u.isAdmin ? 'editor' : (u.role || 'commenter'),
       online: onlineNames.has(name),
       lastSeen: u.lastSeen || 0,
+      departmentId: u.departmentId || null,   // 部门化改造
+      deptRole: u.deptRole || null,
     }));
     console.log('[admin] users list:', list.map(u => ({ name: u.name, online: u.online })));
     socket.emit('admin-users-list', list);

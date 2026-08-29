@@ -936,11 +936,13 @@ function renderAdminUsers(users) {
       else lastSeenText = Math.floor(diff / 604800000) + ' 周前';
     }
     const fingerprintShort = u.fingerprint ? u.fingerprint.slice(0, 12) + '...' : '-';
+    const deptText = u.departmentId ? `${getDeptName(u.departmentId)}${u.deptRole ? '·' + (DEPT_ROLE_LABELS[u.deptRole] || u.deptRole) : ''}` : '-';
     return `<tr data-username="${esc(u.name)}">
       <td><strong>${esc(u.name)}</strong>${u.isAdmin ? ' 👑' : ''}</td>
       <td class="admin-status">${statusHtml}</td>
       <td style="font-size:11px;color:var(--text-dim)">${u.lastSeen ? lastSeenText : '从未上线'}</td>
       <td>${roleLabel}</td>
+      <td style="font-size:11px">${deptText}</td>
       <td style="font-size:10px;color:var(--text-dim)">${fingerprintShort}</td>
       <td>${u.hasPassword ? '<button class="tool-btn" onclick="changeUserPwd(\'' + esc(u.name) + '\')">改密</button>' : '<span style="color:var(--text-dim)">无密码</span>'}</td>
       <td>${u.isBanned
@@ -950,6 +952,55 @@ function renderAdminUsers(users) {
     </tr>`;
   }).join('');
   refreshAdminStatus(); // 渲染后立即用实时在线数据纠正绿点
+}
+
+// 部门管理渲染(站长分配部门/角色)
+function renderDeptAdmin() {
+  const container = document.getElementById('dept-admin-list');
+  if (!container) return;
+  socket.emit('dept-users');
+}
+socket.on('dept-users-result', (depts) => {
+  const container = document.getElementById('dept-admin-list');
+  if (!container) return;
+  container.innerHTML = depts.map(d => {
+    const members = (d.members || []).map(m => `
+      <span style="display:inline-flex;align-items:center;gap:4px;background:var(--card-bg);border:1px solid var(--border);border-radius:16px;padding:2px 10px;font-size:12px">
+        ${esc(m.name)}
+        ${m.isAdmin ? '👑' : (DEPT_ROLE_LABELS[m.deptRole] ? '·' + DEPT_ROLE_LABELS[m.deptRole] : '')}
+        <button class="tool-btn" style="padding:0 4px;font-size:10px" onclick="removeUserFromDept('${esc(m.name)}')">✕</button>
+      </span>`).join('') || '<span style="color:var(--text-dim);font-size:12px">暂无成员</span>';
+    return `<div style="border:1px solid var(--border);border-radius:10px;padding:10px">
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px">
+        <strong style="font-size:14px">${esc(d.name)}</strong>
+        <span style="font-size:11px;color:var(--text-dim);flex:1">${esc(d.description || '')}</span>
+        <button class="tool-btn" onclick="showAddToDept('${d.id}','${esc(d.name)}')">+ 添加成员</button>
+      </div>
+      <div style="display:flex;flex-wrap:wrap;gap:6px">${members}</div>
+    </div>`;
+  }).join('') || '<div style="color:var(--text-dim)">无部门数据</div>';
+});
+
+// 打开添加成员到部门的对话框
+function showAddToDept(deptId, deptName) {
+  const targetName = prompt(`输入要分配到「${deptName}」的用户名:`);
+  if (!targetName) return;
+  const roleMap = { '1': 'leader', '2': 'vice', '3': 'member' };
+  const roleChoice = prompt('角色: 1=部长 2=副部长 3=干事 (默认3)');
+  const deptRole = roleMap[roleChoice] || 'member';
+  socket.emit('dept-assign-user', { targetName: targetName.trim(), departmentId: deptId, deptRole });
+  setTimeout(() => { socket.emit('dept-users'); socket.emit('admin-list-users'); }, 300);
+}
+socket.on('dept-assign-result', (r) => {
+  if (r && r.ok) showToast(`✅ ${r.targetName} 已分配到部门`);
+});
+socket.on('dept-error', (msg) => { showToast('❌ ' + msg); });
+
+// 移除用户部门
+function removeUserFromDept(name) {
+  if (!confirm('移除 ' + name + ' 的部门分配?')) return;
+  socket.emit('dept-assign-user', { targetName: name, departmentId: null, deptRole: null });
+  setTimeout(() => { socket.emit('dept-users'); socket.emit('admin-list-users'); }, 300);
 }
 
 // 实时更新管理员表格的在线状态
@@ -1009,6 +1060,80 @@ let myAvatar = savedAuth ? (savedAuth.avatar || '') : '';
 const avatarMap = {}; // userName → avatar filename
 let _isComposing = false; // track IME composition state
 
+// 部门信息(部门化改造): 登录后由 login-success 填充
+let myDepartmentId = null;
+let myDeptRole = null;
+const DEPT_NAMES = {
+  'media-directing': '传媒编导部', 'editorial-public': '采编宣传部', 'culture-design': '文化设计部',
+  'secretariat': '秘书处', 'host-broadcast': '主持播音部', 'dev-operations': '发展运营部',
+  'multimedia': '多媒体工作部', 'event-planning': '活动策划部',
+};
+const DEPT_ROLE_LABELS = { leader: '部长', vice: '副部长', member: '干事' };
+
+function getDeptName(deptId) { return DEPT_NAMES[deptId] || deptId || ''; }
+
+function updateDeptBadge() {
+  const badge = document.getElementById('dept-badge');
+  if (!badge) return;
+  if (myDepartmentId) {
+    badge.textContent = `${getDeptName(myDepartmentId)} · ${DEPT_ROLE_LABELS[myDeptRole] || '成员'}`;
+    badge.style.display = '';
+  } else {
+    badge.style.display = 'none';
+  }
+}
+
+// 部门工作台横幅(部门化改造)
+const DEPT_DESCRIPTIONS = {
+  'media-directing': '分镜 → 拍摄 → 后期 → 成片,视频内容生产工作流',
+  'editorial-public': '选题 → 写稿 → 排版 → 审核 → 发布,公众号内容输出',
+  'culture-design': '需求沟通 → 设计 → 审核 → 输出,平面/文创/摄影',
+  'secretariat': '会议记录 → 文档归档 → 物资管理 → 考勤统计,行政统筹',
+  'host-broadcast': '稿件打磨 → 录音 → 后期 → 输出,主持与音频栏目',
+  'dev-operations': '后台管理 → 数据统计 → 轻应用搭建,平台运维',
+  'multimedia': '选题 → 脚本 → 拍摄 → 剪辑 → 发布,抖音短视频',
+  'event-planning': '创意构思 → 策划案 → 对接执行 → 复盘,活动全流程',
+};
+
+function updateDeptWorkspace() {
+  const ws = document.getElementById('dept-workspace');
+  if (!ws) return;
+  if (!myDepartmentId) { ws.style.display = 'none'; return; }
+  const title = document.getElementById('dept-ws-title');
+  const desc = document.getElementById('dept-ws-desc');
+  if (title) title.textContent = `🏢 ${getDeptName(myDepartmentId)}工作台`;
+  if (desc) desc.textContent = DEPT_DESCRIPTIONS[myDepartmentId] || '';
+  ws.style.display = '';
+  // 快捷按钮: 新建分镜项目(传媒编导部等视频类部门)
+  const btnSb = document.getElementById('dept-create-storyboard');
+  const btnAi = document.getElementById('dept-ai-outline');
+  const videoDepts = ['media-directing', 'multimedia'];
+  if (btnSb) btnSb.style.display = videoDepts.includes(myDepartmentId) ? '' : 'none';
+  if (btnAi) btnAi.style.display = videoDepts.includes(myDepartmentId) ? '' : 'none';
+  if (btnSb) btnSb.onclick = () => createDeptProject('storyboard');
+  if (btnAi) btnAi.onclick = () => openAiOutlineDialog();
+}
+
+// 部门内新建项目(自动挂本部门, 后端处理归属)
+function createDeptProject(type) {
+  const name = prompt('输入项目名称:', getDeptName(myDepartmentId) + '项目');
+  if (!name) return;
+  socket.emit('project-create', { type, name });
+}
+
+// AI 生成分镜框架(传媒编导部快捷操作)
+function openAiOutlineDialog() {
+  const topic = prompt('输入分镜主题(如: 校园迎新晚会):');
+  if (!topic) return;
+  fetch('/api/ai/mindmap/chat', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ message: '请为"' + topic + '"生成一份分镜框架', mindmap: { root: topic, children: [] }, history: [] }),
+  }).then(r => r.json()).then(data => {
+    if (data.error) { alert('AI 生成失败: ' + data.error); return; }
+    alert((data.reply || '') + '\n\n(可复制到思维导图或分镜项目中细化)');
+  }).catch(e => alert('请求失败: ' + e.message));
+}
+
 let myGroups = []; // user's groups
 let allUsers = []; // all registered users (for create-group)
 let currentGroupId = null; // group chat context
@@ -1040,11 +1165,16 @@ socket.on('connect', () => {
   }
 });
 
-socket.on('login-success', ({ userName, isAdmin: admin, role, avatar }) => {
+socket.on('login-success', ({ userName, isAdmin: admin, role, avatar, departmentId, deptRole }) => {
   avatarMap[userName] = avatar || '';
   isAdmin = admin;
   socket.emit('group-list');
   myRole = role || (isAdmin ? 'editor' : 'commenter');
+  // 部门信息(部门化改造)
+  myDepartmentId = departmentId || null;
+  myDeptRole = deptRole || null;
+  updateDeptBadge();
+  updateDeptWorkspace();
   if (avatar) {
     myAvatar = avatar;
     updateAvatar('/avatars/' + avatar);
@@ -1137,6 +1267,15 @@ socket.on('role-changed', ({ role }) => {
   const roleLabel = isAdmin ? '👑' : (myRole === 'editor' ? '✏️' : (myRole === 'commenter' ? '💬' : '👁️'));
   selfBadge.textContent = `${roleLabel} ${myName}`;
   showAlert(`你的角色已变更为: ${role}`, '角色变更', '🎭');
+});
+
+// 部门变更通知(站长分配后实时刷新)
+socket.on('dept-changed', ({ departmentId, deptRole }) => {
+  myDepartmentId = departmentId || null;
+  myDeptRole = deptRole || null;
+  updateDeptBadge();
+  updateDeptWorkspace();
+  showAlert(`你已被分配到: ${getDeptName(myDepartmentId) || '无部门'}`, '部门变更', '🏢');
 });
 
 // ─── 客户端缓存 ─────────────────────────────────────────
@@ -1532,6 +1671,7 @@ function switchModule(moduleName) {
     socket.emit('admin-get-stats');
     socket.emit('admin-list-resets');
     socket.emit('admin-list-msg-requests');
+    renderDeptAdmin(); // 部门管理(部门化改造)
   }
   // 获取群列表（消息面板和管理面板都加载）
   if (moduleName === 'messages' || moduleName === 'admin') {

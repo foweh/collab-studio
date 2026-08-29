@@ -30,6 +30,7 @@
         <button class="toolbar-btn" id="qr-btn" title="手机扫码访问" style="font-size:16px">📱</button>
         <button class="toolbar-btn" id="lang-toggle-btn" title="中/EN" style="font-size:13px">🇨🇳 中文</button>
         <button class="toolbar-btn" id="admin-login-btn" title="管理员登录" style="font-size:13px;padding:5px 8px">👑</button>
+        <span id="dept-badge" style="display:none;font-size:12px;padding:4px 10px;border-radius:20px;background:var(--accent);color:#fff;margin-left:6px;white-space:nowrap"></span>
         <img id="user-avatar" src="/default-avatar.png" title="用户头像" style="width:32px;height:32px;border-radius:50%;object-fit:cover;cursor:pointer;border:2px solid var(--border);margin-left:6px">
       </div>
     </header>
@@ -88,6 +89,14 @@
               <button class="toolbar-btn danger" id="empty-trash-btn" title="清空回收站" style="display:none">🗑️ 清空回收站</button>
               <span style="width:1px;height:20px;background:var(--border);margin:0 4px"></span>
               <button class="toolbar-btn" id="trash-btn" title="回收站" style="font-size:14px">🗑️</button>
+            </div>
+          </div>
+          <div id="dept-workspace" style="display:none;padding:10px 16px;border-bottom:1px solid var(--border);background:linear-gradient(135deg,rgba(79,195,247,.08),rgba(124,77,255,.06))">
+            <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+              <span id="dept-ws-title" style="font-size:15px;font-weight:600"></span>
+              <span id="dept-ws-desc" style="font-size:12px;color:var(--text-dim);flex:1"></span>
+              <button class="toolbar-btn" id="dept-create-storyboard" title="新建分镜项目" style="font-size:13px">🎬 新建分镜</button>
+              <button class="toolbar-btn" id="dept-ai-outline" title="AI 生成分镜框架" style="font-size:13px">🤖 AI 分镜框架</button>
             </div>
           </div>
           <div id="breadcrumb" class="breadcrumb" style="display:none;padding:8px 16px;border-bottom:1px solid var(--border);flex-wrap:wrap;gap:8px;align-items:center"></div>
@@ -240,6 +249,7 @@
                     <th>状态</th>
                     <th>最近上线</th>
                     <th>角色</th>
+                    <th>部门</th>
                     <th>指纹</th>
                     <th>改密码</th>
                     <th>操作</th>
@@ -247,6 +257,13 @@
                   <tbody id="admin-users-tbody"></tbody>
                 </table>
               </div>
+            </div>
+
+            <!-- 部门管理(部门化改造) -->
+            <div class="admin-section" id="dept-admin-section">
+              <h3>🏢 部门管理</h3>
+              <div style="margin-bottom:8px;font-size:12px;color:var(--text-dim)">站长分配用户到部门并设定角色(部长/副部长/干事)</div>
+              <div id="dept-admin-list" style="display:flex;flex-direction:column;gap:10px"></div>
             </div>
           </div>
         </section>
