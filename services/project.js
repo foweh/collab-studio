@@ -45,6 +45,8 @@ function saveProjects() {
     owner: p.owner, parentId: p.parentId || undefined,
     deleted: p.deleted || undefined, deletedAt: p.deletedAt || undefined,
     visibility: p.visibility || 'private',
+    departmentId: p.departmentId || undefined,  // 部门项目归属(部门化改造)
+    assigneeId: p.assigneeId || undefined,      // 分配给干事(只读增强)
     _version: p._version || 0,
     syncedFrom: p.syncedFrom || undefined,
   }));
@@ -52,12 +54,20 @@ function saveProjects() {
 }
 
 // ─── 权限校验（基于 auth） ──────────────────────────────
+// 部门项目(departmentId 非空): 部长/副部长可编辑, 干事只读(被分配者可编辑)
+// 个人项目(无部门): 维持原逻辑(owner/admin/public-edit)
 function canEditProject(userName, project, auth) {
   if (!userName || !auth.getUser(userName)) return false;
-  if (auth.isAdmin(userName)) return true;
+  if (auth.isAdmin(userName)) return true;   // 站长
   if (project.owner === userName) return true;
   if (project.visibility === 'public-edit') return auth.canEdit(userName);
   if (project.visibility === 'public-read') return false;
+  // 部门项目: 本部门部长/副部长可编辑
+  if (project.departmentId && auth.getDepartmentId(userName) === project.departmentId) {
+    if (auth.canEditInDept(userName)) return true;
+    // 干事: 被分配给该项目的可编辑
+    if (project.assigneeId === userName) return true;
+  }
   return false;
 }
 
@@ -65,7 +75,33 @@ function canDeleteProject(userName, project, auth) {
   if (!userName || !auth.getUser(userName)) return false;
   if (auth.isAdmin(userName)) return true;
   if (project.owner === userName) return true;
+  // 部门项目: 本部门部长可删除
+  if (project.departmentId && auth.getDepartmentId(userName) === project.departmentId && auth.isDeptLeader(userName)) {
+    return true;
+  }
   return false;
+}
+
+// 部门项目可见性: 本部门成员可见; 干事只读(除非被分配); 部长/副部长可编辑
+// 返回 'none' | 'read' | 'edit'
+function getProjectAccess(userName, project, auth) {
+  if (!userName || !auth.getUser(userName)) return 'none';
+  if (auth.isAdmin(userName)) return 'edit';            // 站长
+  if (auth.isDeputyAdmin(userName)) return 'read';      // 副站长: 全局只读
+  if (project.visibility === 'public-edit') return auth.canEdit(userName) ? 'edit' : 'read';
+  if (project.visibility === 'public-read') return 'read';
+  if (project.owner === userName) return 'edit';
+  if (project.departmentId) {
+    if (auth.getDepartmentId(userName) !== project.departmentId) return 'none';  // 部门硬隔离
+    if (auth.canEditInDept(userName)) return 'edit';     // 部长/副部长
+    if (project.assigneeId === userName) return 'edit';  // 被分配的干事
+    return 'read';                                       // 普通干事只读
+  }
+  return 'none';
+}
+
+function canViewProject(userName, project, auth) {
+  return getProjectAccess(userName, project, auth) !== 'none';
 }
 
 function canChangeVisibility(userName, project, auth) {
@@ -90,6 +126,13 @@ function getAllProjects() { return projects; }
 function getVisibleProjects(userName, auth) {
   return projects.filter(p => {
     if (p.deleted) return false;
+    // 部门项目: 按部门隔离过滤
+    if (p.departmentId) {
+      // 站长/副站长可见全部; 本部门成员可见; public-read/public-edit 全局公开
+      if (auth.isAdmin(userName) || auth.isDeputyAdmin(userName)) return true;
+      if (auth.getDepartmentId(userName) === p.departmentId) return true;
+      return p.visibility === 'public-read' || p.visibility === 'public-edit';
+    }
     if (p.visibility === 'private') return auth.isAdmin(userName) || p.owner === userName;
     return true;
   });
@@ -100,7 +143,7 @@ function getDeletedProjects(userName, auth) {
   return projects.filter(p => p.deleted);
 }
 
-function createProject(type, name, data, owner) {
+function createProject(type, name, data, owner, opts) {
   const p = {
     id: uuid().slice(0, 12),
     type, name: name || '未命名',
@@ -108,6 +151,8 @@ function createProject(type, name, data, owner) {
     createdAt: Date.now(), updatedAt: Date.now(),
     owner: owner || 'unknown',
     visibility: 'private',
+    departmentId: (opts && opts.departmentId) || undefined,  // 部门项目归属
+    assigneeId: (opts && opts.assigneeId) || undefined,      // 分配给干事
     _version: 0,
   };
   projects.push(p);
@@ -312,6 +357,8 @@ module.exports = {
   canEditProject,
   canDeleteProject,
   canChangeVisibility,
+  canViewProject,
+  getProjectAccess,
   getDefaultData,
   getItemTypeLabel,
 };

@@ -153,7 +153,9 @@ function getOrCreateUser(name, password) {
       isAdmin: false, fingerprint: '', isBanned: false,
       role: 'editor',
       lastSeen: 0,
-      avatar: ''
+      avatar: '',
+      departmentId: null,   // 部门 id(站长分配)
+      deptRole: null,       // 部门角色: leader/vice/member
     };
   }
   return users[name];
@@ -220,6 +222,39 @@ function canComment(name) {
   return role === 'editor' || role === 'commenter';
 }
 
+// ─── 部门角色辅助(部门化改造) ────────────────────────
+// deptRole: leader(部长) / vice(副部长) / member(干事)
+// 副站长: role === 'deputy_admin'(全局只读)
+
+function getDeptRole(name) {
+  const u = users[name];
+  return (u && u.deptRole) || null;
+}
+
+function getDepartmentId(name) {
+  const u = users[name];
+  return (u && u.departmentId) || null;
+}
+
+function isDeputyAdmin(name) {
+  const u = users[name];
+  return !!(u && u.role === 'deputy_admin');
+}
+
+function isDeptLeader(name) {
+  return getDeptRole(name) === 'leader';
+}
+
+function isDeptVice(name) {
+  return getDeptRole(name) === 'vice';
+}
+
+// 部门内可编辑: 部长/副部长
+function canEditInDept(name) {
+  const r = getDeptRole(name);
+  return r === 'leader' || r === 'vice';
+}
+
 function saveUsers() { saveJSON(USERS_FILE, users); }
 
 module.exports = {
@@ -247,6 +282,13 @@ module.exports = {
   getUserRole,
   canEdit,
   canComment,
+  // 部门
+  getDeptRole,
+  getDepartmentId,
+  isDeputyAdmin,
+  isDeptLeader,
+  isDeptVice,
+  canEditInDept,
   saveUsers,
   users,
 };
