@@ -45,6 +45,7 @@ let projects = [];
 let peers = [];
 let currentFolderPath = [];
 let currentOpenProjectId = null; // 当前打开的项目 ID（用于 project-open/close 追踪）
+let deptFilter = 'mine'; // 部门分类筛选: 'mine'=我的部门 / 部门id=查看该部门公开项目(阶段五)
 
 // DOM
 const $ = (s) => document.querySelector(s);
@@ -1137,6 +1138,29 @@ function updateDeptWorkspace() {
   if (btnMat) btnMat.onclick = () => openDeptSubview('materials');
   if (btnDev) btnDev.onclick = () => openDeptSubview('devices');
   if (btnStats) btnStats.onclick = () => openDeptSubview('stats');
+
+  // 部门分类导航(阶段五): 所有登录用户可见, 点击切换部门工作区
+  const deptNav = document.getElementById('dept-nav');
+  if (deptNav) {
+    deptNav.style.display = '';
+    deptNav.querySelectorAll('.dept-chip').forEach(chip => {
+      chip.onclick = () => {
+        deptFilter = chip.dataset.dept;
+        deptNav.querySelectorAll('.dept-chip').forEach(c => {
+          c.style.background = c.dataset.dept === deptFilter ? 'var(--accent)' : 'var(--card-bg)';
+          c.style.color = c.dataset.dept === deptFilter ? '#fff' : 'var(--text)';
+        });
+        currentFolderPath = [];
+        renderProjects();
+      };
+    });
+    // 高亮当前筛选
+    deptNav.querySelectorAll('.dept-chip').forEach(c => {
+      const active = c.dataset.dept === deptFilter;
+      c.style.background = active ? 'var(--accent)' : 'var(--card-bg)';
+      c.style.color = active ? '#fff' : 'var(--text)';
+    });
+  }
 }
 
 // 部门内新建项目(自动挂本部门, 后端处理归属)
@@ -2262,6 +2286,27 @@ function renderProjects() {
   };
   visibleProjects = visibleProjects.filter(p => canAccess(p));
 
+  // 部门分类筛选(阶段五): 根级(非文件夹内)才应用部门过滤
+  if (!currentFolderId && !showingTrash) {
+    const myDeptId = myDepartmentId;
+    if (deptFilter === 'mine') {
+      // 我的部门: 本部门项目 + 无部门项目(按原可见性: owner 或公开)
+      visibleProjects = visibleProjects.filter(p => {
+        if (p.departmentId) return p.departmentId === myDeptId;
+        return true; // 无部门项目保持原逻辑(canAccess 已过滤)
+      });
+    } else if (deptFilter === 'all') {
+      // 全部(管理员/副站长视角): 不做额外过滤
+    } else {
+      // 查看指定部门: 仅该部门的公开项目(跨部门只能看公开, private 隔离)
+      visibleProjects = visibleProjects.filter(p => {
+        if (p.departmentId !== deptFilter) return false;
+        if (isAdmin) return true; // 站长可看所有部门(含私密)
+        return p.visibility && p.visibility !== 'private';
+      });
+    }
+  }
+
   if (visibleProjects.length === 0) {
     projectList.innerHTML += showingTrash
       ? '<div class="editor-placeholder">回收站是空的</div>'
@@ -2301,13 +2346,15 @@ function renderFolderCard(f, isSynced) {
     `<option value="${v}"${vis === v ? ' selected' : ''}>${folderVisLabels[v]}</option>`
   ).join('');
   const sourceLabel = isSynced && f.syncedFrom ? ` · 来自 ${esc(f.syncedFrom.serverName || '未知设备')}` : '';
+  const folderDeptTag = (f.departmentId && f.departmentId !== myDepartmentId)
+    ? `<span style="display:inline-block;padding:1px 8px;border-radius:10px;font-size:10px;background:rgba(124,77,255,.15);color:#7c4dff;margin-left:4px">📢 ${getDeptName(f.departmentId)}</span>` : '';
   const card = document.createElement('div');
   card.className = 'project-card folder' + (isSynced ? ' synced' : '');
   const childCount = projects.filter(p => !p.deleted && p.parentId === f.id).length;
   card.innerHTML = `
     <span class="p-type">📁</span>
     <button class="p-del" data-id="${f.id}">×</button>
-    <div class="p-name">${esc(cleanProjectName(f.name))}</div>
+    <div class="p-name">${esc(cleanProjectName(f.name))}${folderDeptTag}</div>
     <div class="p-meta">文件夹 · ${childCount} 个项目 · ${timeAgo(f.updatedAt)}</div>
     <div class="p-owner">${esc(f.owner || '我')}${sourceLabel}</div>
     <div style="font-size:11px;color:var(--text-dim);margin-top:2px;display:flex;align-items:center;gap:4px">
@@ -2377,6 +2424,11 @@ function renderProjectCard(p, isSynced) {
   const wfStatus = p.data && p.data.status;
   const typeLabel = names[p.type] || p.type;
   const metaType = p.type === 'project' ? ('项目 · ' + ((p.data && p.data.items) ? p.data.items.length + '个子项' : '0个子项')) : typeLabel;
+  // 部门标签: 跨部门公开项目显示来源部门(阶段五)
+  let deptTag = '';
+  if (p.departmentId && p.departmentId !== myDepartmentId) {
+    deptTag = `<span style="display:inline-block;padding:1px 8px;border-radius:10px;font-size:10px;background:rgba(124,77,255,.15);color:#7c4dff;margin-left:4px">📢 ${getDeptName(p.departmentId)}</span>`;
+  }
   if (['article', 'design-task', 'activity', 'meeting', 'audio-project', 'video-project'].includes(p.type) && wfStatus) {
     const wfLabels = { draft: '草稿', first_review: '待初审', second_review: '待终审', published: '已发布', rejected: '已驳回',
       planning: '策划中', pending_approval: '待审批', executing: '执行中', ended: '已结束', reviewed: '已复盘',
@@ -2391,7 +2443,7 @@ function renderProjectCard(p, isSynced) {
   card.innerHTML = `
     <span class="p-type">${icons[p.type] || '📄'}</span>
     <button class="p-del" data-id="${p.id}">×</button>
-    <div class="p-name">${esc(cleanProjectName(p.name))}${statusBadge}</div>
+    <div class="p-name">${esc(cleanProjectName(p.name))}${statusBadge}${deptTag}</div>
     <div class="p-meta" style="display:flex;align-items:center;gap:4px;flex-wrap:wrap">
       <span title="${visLabels[vis]}">${visIcons[vis] || '🔒'}</span>
       ${metaType} · ${timeAgo(p.updatedAt)}

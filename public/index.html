@@ -112,6 +112,21 @@
             </div>
             <div id="dept-subview-content" style="max-height:60vh;overflow-y:auto"></div>
           </div>
+          <!-- 部门分类导航(阶段五): 点击切换查看各部门工作区 -->
+          <div id="dept-nav" style="display:none;padding:8px 16px;border-bottom:1px solid var(--border);background:var(--surface2)">
+            <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">
+              <span style="font-size:12px;color:var(--text-dim);margin-right:4px">部门:</span>
+              <button class="dept-chip active" data-dept="mine" style="padding:3px 12px;border-radius:16px;font-size:12px;border:1px solid var(--border);background:var(--accent);color:#fff;cursor:pointer">🏠 我的部门</button>
+              <button class="dept-chip" data-dept="media-directing" style="padding:3px 12px;border-radius:16px;font-size:12px;border:1px solid var(--border);background:var(--card-bg);color:var(--text);cursor:pointer">传媒编导部</button>
+              <button class="dept-chip" data-dept="editorial-public" style="padding:3px 12px;border-radius:16px;font-size:12px;border:1px solid var(--border);background:var(--card-bg);color:var(--text);cursor:pointer">采编宣传部</button>
+              <button class="dept-chip" data-dept="culture-design" style="padding:3px 12px;border-radius:16px;font-size:12px;border:1px solid var(--border);background:var(--card-bg);color:var(--text);cursor:pointer">文化设计部</button>
+              <button class="dept-chip" data-dept="secretariat" style="padding:3px 12px;border-radius:16px;font-size:12px;border:1px solid var(--border);background:var(--card-bg);color:var(--text);cursor:pointer">秘书处</button>
+              <button class="dept-chip" data-dept="host-broadcast" style="padding:3px 12px;border-radius:16px;font-size:12px;border:1px solid var(--border);background:var(--card-bg);color:var(--text);cursor:pointer">主持播音部</button>
+              <button class="dept-chip" data-dept="dev-operations" style="padding:3px 12px;border-radius:16px;font-size:12px;border:1px solid var(--border);background:var(--card-bg);color:var(--text);cursor:pointer">发展运营部</button>
+              <button class="dept-chip" data-dept="multimedia" style="padding:3px 12px;border-radius:16px;font-size:12px;border:1px solid var(--border);background:var(--card-bg);color:var(--text);cursor:pointer">多媒体工作部</button>
+              <button class="dept-chip" data-dept="event-planning" style="padding:3px 12px;border-radius:16px;font-size:12px;border:1px solid var(--border);background:var(--card-bg);color:var(--text);cursor:pointer">活动策划部</button>
+            </div>
+          </div>
           <div id="breadcrumb" class="breadcrumb" style="display:none;padding:8px 16px;border-bottom:1px solid var(--border);flex-wrap:wrap;gap:8px;align-items:center"></div>
           <div id="project-list" class="project-grid"></div>
         </section>
