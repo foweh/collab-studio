@@ -1824,6 +1824,11 @@ document.addEventListener('keydown', (e) => {
     return; // 退格/文字/组合键由 input 原生处理
   }
 
+  // ── 输入框内不拦截快捷键（AI 聊天/主题、搜索、节点备注等）──
+  // 否则退格、Delete、Tab、空格会被当成画布快捷键，导致输入的文字无法删除
+  const t = e.target;
+  if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable)) return;
+
   // ── 普通快捷键 ──
   if (e.ctrlKey || e.metaKey) {
     switch (e.key.toLowerCase()) {
