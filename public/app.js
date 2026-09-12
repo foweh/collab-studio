@@ -716,14 +716,15 @@ socket.on('admin-permission-request', (req) => {
     if (section) section.style.display = '';
     const emptyMsg = container.querySelector('.status-none');
     if (emptyMsg) emptyMsg.remove();
-    if (container.querySelector(`[data-from="${esc(req.from)}"]`)) return;
+    // 以 from+target 去重，避免同一用户对不同目标的申请互相覆盖
+    if (container.querySelector(`[data-from="${esc(req.from)}"][data-target="${esc(req.target)}"]`)) return;
     const div = document.createElement('div');
     div.className = 'approve-item';
     div.dataset.from = req.from;
     div.dataset.target = req.target;
     div.innerHTML = `<span>${esc(req.from)} 请求向 ${esc(req.target)} 发消息</span>
-      <button class="tool-btn" onclick="approveMsgReq('${esc(req.from)}', true)">✅ 批准</button>
-      <button class="tool-btn danger" onclick="approveMsgReq('${esc(req.from)}', false)">❌ 拒绝</button>`;
+      <button class="tool-btn" onclick="approveMsgReq('${esc(req.from)}', true, '${esc(req.target)}')">✅ 批准</button>
+      <button class="tool-btn danger" onclick="approveMsgReq('${esc(req.from)}', false, '${esc(req.target)}')">❌ 拒绝</button>`;
     container.appendChild(div);
   }
   showToast('📨 ' + req.from + ' 请求消息权限 - 请在管理面板审批');
@@ -741,29 +742,31 @@ socket.on('admin-msg-requests-list', (requests) => {
       const time = new Date(r.time).toLocaleString();
       return `<div class="approve-item" data-from="${esc(r.from)}" data-target="${esc(r.target)}" style="display:flex;align-items:center;gap:8px;padding:6px 0;border-bottom:1px solid var(--border)">
         <span style="flex:1;font-size:12px">${esc(r.from)} → ${esc(r.target)} <span style="color:var(--text-dim);font-size:10px">${time}</span></span>
-        <button class="tool-btn" onclick="approveMsgReq('${esc(r.from)}', true)">✅ 批准</button>
-        <button class="tool-btn danger" onclick="approveMsgReq('${esc(r.from)}', false)">❌ 拒绝</button>
+        <button class="tool-btn" onclick="approveMsgReq('${esc(r.from)}', true, '${esc(r.target)}')">✅ 批准</button>
+        <button class="tool-btn danger" onclick="approveMsgReq('${esc(r.from)}', false, '${esc(r.target)}')">❌ 拒绝</button>
       </div>`;
     }).join('');
   }
 });
 
-function approveMsgReq(from, approve) {
-  // 优先从 data-target 获取
-  const item = document.querySelector(`.approve-item[data-from="${esc(from)}"]`);
-  let target = item ? item.dataset.target : '';
-  // 降级：从文本解析（兼容旧数据）
-  if (!target && item) {
-    const targetEl = item.querySelector('span');
-    const targetText = targetEl ? targetEl.textContent : '';
-    const targetMatch = targetText.match(/请求向 (.+?) 发消息/);
-    target = targetMatch ? targetMatch[1] : '';
+function approveMsgReq(from, approve, target) {
+  // 优先使用按钮传入的 target
+  if (!target) {
+    const item = document.querySelector(`.approve-item[data-from="${esc(from)}"]`);
+    if (item) target = item.dataset.target || '';
+    // 降级：从文本解析（兼容旧数据）
+    if (!target && item) {
+      const targetEl = item.querySelector('span');
+      const targetText = targetEl ? targetEl.textContent : '';
+      const targetMatch = targetText.match(/请求向 (.+?) 发消息/);
+      target = targetMatch ? targetMatch[1] : '';
+    }
   }
   if (!target) { showToast('❌ 无法解析目标用户，请重新申请'); return; }
   socket.emit('admin-approve-permission', { from, target, approve });
-  // 移除申请条目
+  // 只移除该 from→target 的申请条目
   document.querySelectorAll('.approve-item').forEach(el => {
-    if (el.textContent.includes(from)) el.remove();
+    if (el.dataset.from === from && el.dataset.target === target) el.remove();
   });
 }
 

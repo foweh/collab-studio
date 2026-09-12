@@ -2010,46 +2010,11 @@ io.on('connection', (socket) => {
     }
   });
 
-  // ── 消息权限申请 ──
-  socket.on('admin-request-msg-permission', ({ targetName }) => {
-    if (!validateString(targetName, 50) || !targetName.trim()) return;
-    if (!socket.userName) return;
-    const req = { from: socket.userName, target: targetName.trim(), time: Date.now() };
-    msgPermissionRequests.push(req);
-    savePendingRequests();
-    addLog(socket.id, socket.userName, 'request msg permission', 'system', `→ ${targetName}`);
-    // 通知所有管理员
-    for (const [sid, u] of onlineUsers) {
-      if (u.isAdmin) io.to(sid).emit('admin-msg-permission-request', req);
-    }
-    socket.emit('request-sent', '消息权限申请已发送给管理员');
-  });
+  // ── 消息权限申请（统一流程：申请见下方 request-message-permission，审批见 admin-approve-permission） ──
   socket.on('admin-list-msg-requests', () => {
     if (!socket.isAdmin) return;
     socket.emit('admin-msg-requests-list', msgPermissionRequests);
   });
-  socket.on('admin-approve-msg-permission', ({ from, approve }) => {
-    if (!socket.isAdmin) return;
-    if (!validateString(from, 50)) return;
-    const req = msgPermissionRequests.find(r => r.from === from);
-    const idx = msgPermissionRequests.findIndex(r => r.from === from);
-    if (idx >= 0) { msgPermissionRequests.splice(idx, 1); savePendingRequests(); }
-    // 通知申请者
-    for (const [sid, u] of onlineUsers) {
-      if (u.name === from) {
-        if (approve && req) {
-          const key = `${from}→${req.target}`;
-          messagePermissions[key] = true;
-          saveMsgPermissions();
-          io.to(sid).emit('message-permission-granted', { target: req.target });
-        } else {
-          io.to(sid).emit('message-permission-denied', {});
-        }
-      }
-    }
-    addLog(socket.id, socket.userName, 'msg permission', 'system', `${from} → ${approve ? '批准' : '拒绝'}`);
-  });
-
   // ── 角色查询 ──
   socket.on('admin-get-roles', () => {
     if (!socket.isAdmin) return;
@@ -2211,10 +2176,15 @@ io.on('connection', (socket) => {
     socket.emit('message-permission-status', { target, permitted: !!messagePermissions[key] });
   });
   socket.on('request-message-permission', ({ target }) => {
-    if (!socket.userName) return;
+    if (!socket.userName || !target) return;
     const from = socket.userName;
     const key = `${from}→${target}`;
     if (messagePermissions[key]) { socket.emit('message-permission-granted', { target }); return; }
+    // 去重 + 持久化：管理端列表(admin-list-msg-requests)与实时事件共用同一份数据
+    if (!msgPermissionRequests.some(r => r.from === from && r.target === target)) {
+      msgPermissionRequests.push({ from, target, time: Date.now() });
+      savePendingRequests();
+    }
     // 给申请者确认
     socket.emit('request-sent', '消息权限申请已发送给管理员');
     for (const [sid, u] of onlineUsers) {
@@ -2227,6 +2197,9 @@ io.on('connection', (socket) => {
       socket.emit('toast', { msg: '审批失败：缺少目标用户信息', type: 'error' });
       return;
     }
+    // 从待办列表移除并落盘
+    const reqIdx = msgPermissionRequests.findIndex(r => r.from === from && r.target === target);
+    if (reqIdx >= 0) { msgPermissionRequests.splice(reqIdx, 1); savePendingRequests(); }
     const key = `${from}→${target}`;
     if (approve) {
       messagePermissions[key] = true;
