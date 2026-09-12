@@ -1,149 +1,133 @@
-# 🎬 CollabStudio — 多机协作创作工作室
+# Collab Studio
 
-> 零配置局域网实时协作平台，支持剧本、思维导图、故事、分镜同步编辑。
+> 局域网实时协作创作工作室 —— 剧本 / 思维导图 / 故事 / 分镜，零配置，无需云端。
 
-## ✨ 功能
+![Node](https://img.shields.io/badge/node-%3E%3D18-brightgreen)
+![License](https://img.shields.io/badge/license-MIT-blue)
+![Platform](https://img.shields.io/badge/platform-LAN-FF6B6B)
 
-| 模块 | 说明 |
-|------|------|
-| 📜 **剧本编辑器** | 幕/场/对白三级结构，角色管理，拖拽排序，导出 Markdown |
-| 🧠 **思维导图** | 多根节点，拖拽/缩放/双指缩放，颜色/标记，导出 PNG |
-| 📖 **故事编辑器** | 章节管理，富文本编辑，实时同步 |
-| 🎬 **分镜 (Storyboard)** | 镜头列表 + 绘画板 (Canvas)，图片上传，镜头锁防冲突 |
-| 💬 **群聊 & 私聊** | 群组管理，消息持久化，管理员审批 |
-| 🔒 **权限控制** | 三级可见性 (private/public-read/public-edit)，角色管理 |
-| 🌐 **局域网自动发现** | UDP 广播 + 服务端桥接，零配置即插即用 |
-| ⚡ **实时秒级同步** | 版本化乐观并发控制，图片上传延迟冲突自动解决 |
-| 📱 **移动端适配** | 触屏拖拽/双指缩放/长按菜单 |
+Collab Studio 是一个**面向局域网的多人在线协作创作平台**。每台电脑执行 `node server.js`，同网段节点通过 UDP 广播自动发现并组网，无需中心服务器、无需公网。除创作编辑器外，还内置素材库、设备管理、审核状态机、部门工作台等组织协作能力。
 
-## 🛠 技术栈
+- 详细介绍与目录结构：[docs/项目介绍.md](docs/项目介绍.md)
+- 仓库：https://github.com/foweh/collab-studio
 
-- **Runtime**: Node.js ≥ 18
-- **Server**: Express 4 + Socket.IO 4
-- **Client**: Vanilla JS + Vue 3 (分镜 SPA)
-- **Auth**: bcryptjs + session tokens + device fingerprint
-- **Storage**: JSON 文件 (atomic rename 持久化)
-- **LAN**: UDP broadcast + Socket.IO bridge
+---
 
-## 🚀 快速开始
+## 功能
+
+| 类别 | 功能 |
+| --- | --- |
+| 创作编辑器 | 剧本、思维导图（类 XMind，支持 AI 生成/展开/对话）、故事、分镜、白板 |
+| 多机协作 | UDP 自动发现 + Socket.IO 实时同步，支持 `--join` 手动加入 |
+| 部门化 | 8 部门工作台、素材库、设备管理、审核状态机、数据看板 |
+| 组织管理 | 用户与角色（站长/编辑者/评论者/观察者）、消息权限审批、群聊、找回密码审批 |
+| AI 能力 | DeepSeek 集成：思维导图生成、文档助手（初稿/续写/润色/大纲/拟标题） |
+| 第三方集成 | 剪映草稿生成（capcut-mate）、视频场景检测（PySceneDetect + TransNetV2） |
+| 其他 | 中英双语、HTTPS 自签名、二维码手机扫码访问、纯前端本地工具集 |
+
+---
+
+## 快速开始
 
 ```bash
 # 安装依赖
 npm install
 
-# 启动服务（默认端口 3000）
+# 启动服务（默认端口 3000，自动跳转 HTTPS）
 node server.js
 
-# 或指定端口
-node server.js --port 8080
+# 指定端口
+node server.js --port 3001
+
+# 加入已有的工作室节点
+node server.js --join 192.168.1.100:3000
 ```
 
-浏览器打开 `http://localhost:3000`，多台电脑在同一局域网下自动发现。
+浏览器打开 `http://localhost:3000`，输入名字即可进入。
 
-## 🏗 项目结构
+### 多人协作
+
+- 每台机器运行 `node server.js` 启动一个节点；
+- 各节点通过 **UDP 广播**（端口 `41234`）自动发现并组网；
+- 任意节点进入后，工作室内的剧本 / 导图 / 故事 / 分镜等实时同步；
+- 也可用 `--join` 手动加入指定节点。
+
+### Docker
+
+```bash
+docker compose up -d
+```
+
+映射 `3000`（HTTP）与 `41234/udp`（发现），挂载 `./data` 持久化；管理员密码通过环境变量 `ADMIN_PASSWORD` 注入。
+
+---
+
+## 目录结构（简）
 
 ```
 collab-studio/
-├── server.js              # 主服务端 (Express + Socket.IO + UDP)
-├── sync-build.js          # 同步构建：主版 → android / installer 副本
-├── scripts/
-│   └── gen-ssl-certs.js   # HTTPS 自签名证书生成
-├── services/              # 业务逻辑
-│   ├── auth.js            # 用户认证 / 会话令牌（持久化）
-│   ├── project.js         # 项目管理 CRUD
-│   ├── ai.js              # DeepSeek AI（导图生成/展开/聊天）
-│   ├── capcut-mate.js     # 剪映（CapCut）集成
-│   ├── annotation.js      # 批注系统
-│   └── logger.js          # 审计日志
-├── utils/
-│   ├── persist.js         # JSON 原子读写
-│   └── ratelimit.js       # 滑动窗口限流
-├── public/                # 前端静态文件
-│   ├── index.html         # 主应用壳
-│   ├── app.js             # 面板路由 + Socket 事件
-│   ├── login.html         # 登录页
-│   ├── mindmap.js         # 思维导图引擎
-│   ├── script-editor.js   # 剧本编辑器
-│   ├── story-editor.js    # 故事编辑器
-│   ├── fenjing/           # 分镜 Vue3 SPA
-│   └── style.css          # 全局样式
-├── scenedetect-server/    # 视频场景检测 (PySceneDetect Flask 子进程)
-├── data/                  # 运行时数据 (不提交 git)
-├── docs/                  # 文档
-├── android/               # Android 客户端工程（内嵌 Node.js 副本）
-├── installer/             # Windows 安装器工程（内嵌 Node.js 副本）
-└── Dockerfile             # Docker 部署
+├─ server.js          服务端入口（Express + Socket.IO + UDP 发现 + HTTPS）
+├─ services/          业务逻辑：auth / project / department / state-machine / ai / materials / devices ...
+├─ utils/             工具：persist（JSON 落盘）、ratelimit
+├─ public/            前端（原生 JS）：app.js、各编辑器、dept-views、tools、vendor 本地化库
+├─ scripts/           gen-ssl-certs.js
+├─ scenedetect-server/ 视频场景检测（Flask + PySceneDetect + TransNetV2）
+├─ android/           Android 版外壳
+├─ installer/         Windows 安装器
+├─ test/              测试
+└─ docs/              文档
 ```
 
-## 登录与权限
+完整结构见 [docs/项目介绍.md](docs/项目介绍.md)。
 
-- 打开页面输入用户名即自动注册（密码可选），也可设置密码
-- 管理员从 `.admin.env` 配置（`ADMIN_USERNAME` / `ADMIN_PASSWORD`），启动时自动创建
-- 角色三级：admin / editor / commenter，管理员可在设置面板调整
-- 会话令牌持久化到 `data/tokens.json`，服务器重启后已登录用户不掉线
-- 三级限流防爆破：按 IP（20/分）、按用户（5/分）、按设备指纹（3/分）
-- 设备指纹封禁：管理员可拉黑指定设备
+---
 
-## AI 思维导图（DeepSeek）
+## 技术栈
 
-- 设置面板填入 DeepSeek API Token（`data/ai-config.json`）
-- 一键生成：输入主题自动生成 30-80 节点的多层导图
-- AI 展开：选中节点后让 AI 生成子分支
-- AI 聊天协作：对话式编辑导图，AI 可执行增删改节点、连线、着色等操作
-- 接口限流：`/api/ai/mindmap/*` 按 IP 5 次/分钟
+- **后端**：Node.js (>=18) + Express + Socket.IO + UDP(dgram)
+- **前端**：原生 JavaScript (ES Modules) + Canvas；第三方库全部本地化（离线可用）
+- **AI**：DeepSeek API（`deepseek-chat`）
+- **认证**：bcryptjs + 会话 token
+- **视频场景检测**：Python + Flask + PySceneDetect + TransNetV2
 
-## 剪映（CapCut）集成
+---
 
-- 自动扫描剪映小助手端口，连接后同步草稿、推送操作批次、导出视频
-- 剪映安装路径可配置：`POST /api/capcut/install-path`，或编辑 `data/capcut-mate.json` 的 `installPath`
-- 无小助手服务时自动进入模拟模式，便于开发调试
+## 数据与配置
 
-## 视频场景检测（PySceneDetect）
+| 路径 | 说明 | 入库 |
+| --- | --- | --- |
+| `data/` | 运行时数据（用户 / 项目 / 日志 / 权限 / token / AI 配置等） | 否 |
+| `uploads/` | 素材上传文件 | 否 |
+| `ssl/` | TLS 自签名证书 | 否 |
+| `.admin.env` | 管理员账户（明文，启动时哈希） | 否 |
+| `.env.example` | 环境变量模板 | 是 |
 
-- 服务端启动时自动拉起 Flask 子进程（需 Python + `pip install flask opencv-python imagehash Pillow`）
-- 支持 2GB 内视频上传、按镜头切分、截图导出、进度查询
-- 页面入口：`http://localhost:3000/scenedetect.html`
+端口（均可用环境变量覆盖）：HTTP `3000`、HTTPS `443`、UDP `41234`、场景检测 `5000/5001`、剪映 `9527`。
 
-## 白板
+---
 
-- 多用户实时白板（Canvas），支持画笔/形状/连线/光标共享
-- 内容按房间持久化到 `data/whiteboards/`，刷新/重启可恢复
+## 开发约定
 
-## HTTPS 部署
+后端存在三份副本（主版 / `android/` / `installer/`）。**只改主版，再用同步脚本同步**，避免漂移：
 
 ```bash
-# 一键生成自签名证书（默认包含 localhost + 127.0.0.1）
-node scripts/gen-ssl-certs.js
-
-# 或指定域名/IP
-node scripts/gen-ssl-certs.js myhost.lan 192.168.1.100
+node sync-build.js          # 同步 server.js / services/ / utils/ 并校验 SHA-256 一致
+node sync-build.js --deps   # 同步的同时合并依赖
 ```
 
-- 证书生成到 `ssl/`（已 gitignore），重启服务自动启用 HTTPS（443），HTTP 3000 自动跳转
-- 自签名证书浏览器会提示不安全，首次访问需手动信任；正式部署建议使用受信任 CA 证书
+注意：`sync-build.js` 目前只同步后端，不含 `public/` 前端。
 
-## 同步构建（三端副本）
+---
+
+## 测试
 
 ```bash
-# 把主版 server.js + services/ + utils/ 同步到 android/ 与 installer/ 副本
-node sync-build.js
-
-# 同步并合并 package.json 依赖（新依赖添加后执行一次）
-node sync-build.js --deps
+node test/basic.test.js
+node test/lan-sync.test.js
 ```
 
-- android/ 与 installer/ 内嵌后端副本由本脚本维护，**不要手工修改副本代码**
-- 每次修改主版后端代码后运行一次 `node sync-build.js` 即可
+---
 
-## 🔐 安全
+## 许可证
 
-- 所有密码经 bcryptjs 哈希存储
-- Helmet 安全头 + 输入校验 + 路径穿越防护
-- 三级频率限制 (per-IP / per-user / per-fingerprint)
-- 私有项目不进入局域网同步广播（`getShareableProjects` 过滤）
-- 音乐代理域名白名单（防 SSRF）
-- `data/` 目录运行时权限 700
-
-## 📄 License
-
-MIT
+[MIT](LICENSE) © CollabStudio
